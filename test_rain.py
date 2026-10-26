@@ -49,9 +49,7 @@ class VariationTest(unittest.TestCase):
         self.assertNotEqual(a, rain.pick_params(["storm"], 0.15, 10)[1])
         for f in fields(base):
             old, new = getattr(base, f.name), getattr(a, f.name)
-            if isinstance(old, str):
-                self.assertEqual(old, new)
-            elif f.name in rain.BOUNDED:
+            if f.name in rain.BOUNDED:
                 self.assertTrue(0 <= new <= 1 and abs(new - old) <= 0.075 + 1e-9, f.name)
             elif old:
                 self.assertTrue(np.exp(-0.15) - 1e-9 <= new / old <= np.exp(0.15) + 1e-9, f.name)
@@ -82,6 +80,25 @@ class RenderTest(unittest.TestCase):
             y = render_array(rain.PRESETS[name][1], 1, 2.345)
             self.assertEqual(y.shape[1], round(2.345 * 48000))
             self.assertLessEqual(float(np.abs(y).max()), 0.89 + 1e-6, name)
+
+    def test_convolver_matches_direct_convolution(self):
+        rng = np.random.default_rng(0)
+        irs = rng.standard_normal((3, 2, 300)).astype(np.float32)
+        x = rng.standard_normal((3, 5000)).astype(np.float32)
+        conv = rain.Convolver(irs, 1024)
+        got = np.concatenate([conv.process(x[:, i : i + 700]) for i in range(0, 5000, 700)], axis=1)
+        want = np.stack([sum(np.convolve(x[g], irs[g, c])[:5000] for g in range(3)) for c in range(2)])
+        np.testing.assert_allclose(got, want, atol=1e-3)
+
+    def test_roof_is_shared_sheet(self):
+        p = rain.PRESETS["roof"][1]
+        roof = rain.Roof(np.random.default_rng(1), 48000, p, 96000)
+        self.assertEqual(len(roof.sheets), rain.Roof.SPOTS)
+        # Every spot shares the same ringing modes, so the sheets are strongly alike in spectrum.
+        spectra = [np.abs(np.fft.rfft(s[0], 1 << 15)) for s in roof.sheets]
+        self.assertGreater(np.corrcoef(spectra[0], spectra[1])[0, 1], 0.3)
+        y = roof.read(48000 * 4, np.ones(48000 * 4, np.float32))
+        self.assertAlmostEqual(float(np.sqrt(np.mean(y ** 2))), 1.0, delta=0.6)
 
     def test_loudness_hits_target(self):
         for name in ("light", "roof"):

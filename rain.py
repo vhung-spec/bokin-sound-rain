@@ -62,7 +62,15 @@ class RainParams:
     swell_seconds: float  # nhịp to nhỏ, giây
     thunder_per_min: float  # số tiếng sấm trung bình mỗi phút
     thunder_level: float
-    drop_type: str = "water"  # "water" hoặc "metal" (mái tôn)
+    # Mái tôn: mọi giọt đập vào cùng một tấm kim loại mỏng (0 = không có mái)
+    roof_level: float = 0.0  # độ lớn tiếng mái tôn
+    roof_rate: float = 0.0  # số giọt nhỏ ("tách") mỗi giây trên mái
+    roof_big_rate: float = 0.0  # số giọt to ("bộp") mỗi giây
+    roof_big_level: float = 0.0  # độ lớn giọt to so với tiếng mái
+    roof_low_hz: float = 150.0  # dải tần của tấm tôn
+    roof_high_hz: float = 6000.0
+    roof_decay_ms: float = 30.0  # độ ngân của tấm tôn ở 1 kHz
+    roof_ring: float = 0.25  # 0 = tiếng tôn đục, 1 = ngân thành tiếng rõ
 
 
 _HEAVY = RainParams(
@@ -71,6 +79,16 @@ _HEAVY = RainParams(
     width=0.9, drop_rate=110, drop_level=0.9, drop_low_hz=1200, drop_high_hz=4000,
     drop_decay_ms=14, drop_bubble=0.25, swell_db=5, swell_seconds=25,
     thunder_per_min=0, thunder_level=0,
+)
+
+_ROOF = RainParams(
+    hiss_level=0.25, hiss_low_hz=600, hiss_high_hz=8000, hiss_tilt=0.3,
+    texture=0.4, texture_rate=1500, rumble_level=0.25, rumble_high_hz=250,
+    width=0.8, drop_rate=4, drop_level=0.8, drop_low_hz=1200, drop_high_hz=3500,
+    drop_decay_ms=14, drop_bubble=0.6, swell_db=4, swell_seconds=30,
+    thunder_per_min=0, thunder_level=0,
+    roof_level=1.0, roof_rate=2500, roof_big_rate=14, roof_big_level=2.5,
+    roof_low_hz=150, roof_high_hz=6000, roof_decay_ms=30, roof_ring=0.12,
 )
 
 PRESETS: dict[str, tuple[str, RainParams]] = {
@@ -92,17 +110,15 @@ PRESETS: dict[str, tuple[str, RainParams]] = {
     "storm": ("Mưa giông có sấm", replace(
         _HEAVY, swell_db=6, swell_seconds=20, thunder_per_min=0.6, thunder_level=2.5,
     )),
-    "roof": ("Mưa trên mái tôn", RainParams(
-        hiss_level=0.5, hiss_low_hz=700, hiss_high_hz=9000, hiss_tilt=0.25,
-        texture=0.6, texture_rate=2500, rumble_level=0.25, rumble_high_hz=300,
-        width=0.8, drop_rate=90, drop_level=1.0, drop_low_hz=900, drop_high_hz=3200,
-        drop_decay_ms=45, drop_bubble=0.0, swell_db=4, swell_seconds=30,
-        thunder_per_min=0, thunder_level=0, drop_type="metal",
+    "roof": ("Mưa rào trên mái tôn", _ROOF),
+    "roof_light": ("Mưa nhẹ trên mái tôn, lộp độp", replace(
+        _ROOF, hiss_level=0.12, rumble_level=0.06, drop_rate=2, swell_db=3, swell_seconds=40,
+        roof_rate=30, roof_big_rate=6, roof_big_level=2.5, roof_decay_ms=18, roof_ring=0.35,
     )),
 }
 
 # Parameters limited to 0..1 are varied additively, everything else multiplicatively.
-BOUNDED = {"width", "texture", "drop_bubble"}
+BOUNDED = {"width", "texture", "drop_bubble", "roof_ring"}
 
 
 def vary_params(base: RainParams, variation: float, rng: np.random.Generator) -> RainParams:
@@ -112,15 +128,13 @@ def vary_params(base: RainParams, variation: float, rng: np.random.Generator) ->
     changes = {}
     for f in fields(base):
         value = getattr(base, f.name)
-        if isinstance(value, str):
-            continue
         u = rng.uniform(-1.0, 1.0)
         if f.name in BOUNDED:
             changes[f.name] = float(np.clip(value + 0.5 * variation * u, 0.0, 1.0))
         else:
             changes[f.name] = float(value) * math.exp(variation * u)
     params = replace(base, **changes)
-    for lo, hi in (("hiss_low_hz", "hiss_high_hz"), ("drop_low_hz", "drop_high_hz")):
+    for lo, hi in (("hiss_low_hz", "hiss_high_hz"), ("drop_low_hz", "drop_high_hz"), ("roof_low_hz", "roof_high_hz")):
         a, b = sorted((getattr(params, lo), getattr(params, hi)))
         params = replace(params, **{lo: a, hi: max(b, a * 1.2)})
     return params
@@ -251,9 +265,10 @@ def _tick(rng, t, tau, smooth):
 
 
 def _trim(x, floor=1e-3):
+    """Normalise a mono (n,) or stereo (2, n) kernel to unit peak and drop its silent tail."""
     x = x / np.max(np.abs(x))
-    keep = np.flatnonzero(np.abs(x) > floor)
-    return x[: keep[-1] + 1].astype(np.float32)
+    keep = np.flatnonzero((np.abs(x).max(axis=0) if x.ndim == 2 else np.abs(x)) > floor)
+    return x[..., : keep[-1] + 1].astype(np.float32)
 
 
 def water_drop(rng, sr, p: RainParams):
@@ -276,52 +291,150 @@ def water_drop(rng, sr, p: RainParams):
     return _trim(drop)
 
 
-def metal_drop(rng, sr, p: RainParams):
-    """Tick exciting a few inharmonic modes, like a drop on a tin roof."""
-    base = _loguniform(rng, p.drop_low_hz, p.drop_high_hz)
-    tau = p.drop_decay_ms / 1000 * rng.uniform(0.6, 1.4)
-    n = int(sr * tau * 5)
-    t = np.arange(n) / sr
-    ratios = np.concatenate([[1.0], np.sort(rng.uniform(1.4, 4.8, 4))])
-    amps = rng.uniform(0.3, 1.0, ratios.size) / ratios ** 0.4
-    phases = rng.uniform(0, 2 * np.pi, ratios.size)
-    decays = tau / np.sqrt(ratios)
-    ring = (amps[:, None] * np.sin(2 * np.pi * base * ratios[:, None] * t + phases[:, None])
-            * np.exp(-t / decays[:, None])).sum(axis=0)
-    tick = _tick(rng, t, rng.uniform(0.0004, 0.0012), 2)
-    return _trim(ring * rng.uniform(0.4, 0.8) + tick)
-
-
 class Drops:
-    """Distinct close drops placed at random from a slowly refreshed bank of drop sounds."""
+    """Distinct events placed at random from a slowly refreshed bank of sounds.
 
-    def __init__(self, rng, sr, p: RainParams, bank_size=48):
-        self.rng, self.sr, self.p = rng, sr, p
-        self.make = metal_drop if p.drop_type == "metal" else water_drop
-        self.bank = [self.make(rng, sr, p) for _ in range(bank_size)]
+    make(rng) returns a mono kernel, panned at random within width, or a stereo (2, n) kernel.
+    """
+
+    def __init__(self, rng, sr, rate, level, make, width=0.0, bank_size=48):
+        self.rng, self.sr, self.rate, self.level, self.make, self.width = rng, sr, rate, level, make, width
+        self.bank = [make(rng) for _ in range(bank_size)]
         self.carry = np.zeros((2, 0), np.float32)
 
     def read(self, n, gain):
-        p, rng = self.p, self.rng
+        rng = self.rng
         peak = float(gain.max())
-        count = int(rng.poisson(p.drop_rate * peak * n / self.sr))
+        count = int(rng.poisson(self.rate * peak * n / self.sr))
         pos = rng.integers(0, n, count)
         pos = pos[rng.random(count) < gain[pos] / peak]
-        amps = p.drop_level * np.minimum(np.exp(rng.normal(0.0, 0.5, pos.size)), math.e)
-        angle = (rng.uniform(-1, 1, pos.size) * p.width + 1) * math.pi / 4
+        amps = self.level * np.minimum(np.exp(rng.normal(0.0, 0.5, pos.size)), math.e)
+        angle = (rng.uniform(-1, 1, pos.size) * self.width + 1) * math.pi / 4
         left, right = amps * np.cos(angle), amps * np.sin(angle)
         which = rng.integers(0, len(self.bank), pos.size)
-        longest = max(max(k.size for k in self.bank), self.carry.shape[1])
+        longest = max(max(k.shape[-1] for k in self.bank), self.carry.shape[1])
         out = np.zeros((2, n + longest), np.float32)
         out[:, : self.carry.shape[1]] += self.carry
-        for s, w, gl, gr in zip(pos.tolist(), which.tolist(), left.tolist(), right.tolist()):
+        for s, w, a, gl, gr in zip(pos.tolist(), which.tolist(), amps.tolist(), left.tolist(), right.tolist()):
             k = self.bank[w]
-            out[0, s : s + k.size] += k * gl
-            out[1, s : s + k.size] += k * gr
+            if k.ndim == 2:
+                out[:, s : s + k.shape[1]] += k * a
+            else:
+                out[0, s : s + k.size] += k * gl
+                out[1, s : s + k.size] += k * gr
         self.carry = out[:, n:]
         for _ in range(max(1, len(self.bank) // 16)):
-            self.bank[int(rng.integers(len(self.bank)))] = self.make(rng, self.sr, p)
+            self.bank[int(rng.integers(len(self.bank)))] = self.make(rng)
         return out[:, :n]
+
+
+class Convolver:
+    """Streaming overlap-add convolution of (groups, n) inputs with fixed (groups, channels, L)
+    impulse responses; the results of all groups are summed into (channels, n)."""
+
+    def __init__(self, irs, block):
+        self.block, self.length = block, irs.shape[-1]
+        self.nfft = 1 << (block + self.length - 2).bit_length()
+        self.spectra = np.fft.rfft(irs, n=self.nfft, axis=-1).astype(np.complex64)
+        self.tail = np.zeros((irs.shape[1], self.length - 1), np.float32)
+
+    def process(self, x):
+        out = []
+        for start in range(0, x.shape[1], self.block):
+            part = x[:, start : start + self.block]
+            n = part.shape[1]
+            spectrum = np.einsum("gf,gcf->cf", np.fft.rfft(part, n=self.nfft, axis=-1), self.spectra)
+            y = np.fft.irfft(spectrum, n=self.nfft, axis=-1)[:, : n + self.length - 1].astype(np.float32)
+            y[:, : self.length - 1] += self.tail
+            self.tail = y[:, n:]
+            out.append(y[:, :n])
+        return np.concatenate(out, axis=1)
+
+
+def raised_pulse(rng, sr, shortest, longest):
+    """Force of a drop hitting a surface; longer pulses (bigger drops) sound duller."""
+    m = max(1, int(round(sr * rng.uniform(shortest, longest))))
+    w = np.hanning(m + 2)[1:-1]
+    return w / w.sum()
+
+
+def sheet_response(rng, sr, p: RainParams, tones):
+    """Stereo impulse response of a thin metal sheet struck at one spot.
+
+    A real sheet has thousands of closely spaced modes, modelled as noise that dies away
+    faster at high frequencies, plus a few shared ringing modes (`tones`) that give the
+    roof its own character. Each spot excites those modes with different strengths.
+    """
+    tau0 = p.roof_decay_ms / 1000
+
+    def tau(f):
+        return tau0 * np.clip(np.asarray(f) / 1000, 0.25, None) ** -0.6
+
+    n = int(sr * 6 * float(tau(0)))
+    t = np.arange(n) / sr
+    f = np.fft.rfftfreq(n, 1.0 / sr)
+    color = band(np.maximum(f, 1.0), p.roof_low_hz, p.roof_high_hz, 0.3)
+    edges = np.geomspace(50, sr / 2, 15)
+    dense = np.zeros((2, n))
+    for c in range(2):
+        spectrum = np.fft.rfft(rng.standard_normal(n)) * color
+        for lo, hi in zip(edges[:-1], edges[1:]):
+            mask = (f >= lo) & (f < hi)
+            dense[c] += np.fft.irfft(spectrum * mask, n) * np.exp(-t / tau(math.sqrt(lo * hi)))
+    dense /= np.sqrt(np.mean(dense ** 2))
+    weights = rng.uniform(0, 1, tones.size) ** 2
+    phases = rng.uniform(0, 2 * np.pi, (tones.size, 1))
+    ring = (weights[:, None] * np.sin(2 * np.pi * tones[:, None] * t + phases)
+            * np.exp(-t / (1.5 * tau(tones))[:, None])).sum(axis=0)
+    ring /= np.sqrt(np.mean(ring ** 2)) + 1e-12
+    return dense * math.sqrt(1 - p.roof_ring) + ring * math.sqrt(p.roof_ring)
+
+
+class Roof:
+    """Rain on a tin roof: every impact excites the same thin metal sheet.
+
+    Small drops ("tách") are impulse trains convolved with the sheet's response at a few
+    spots across the roof; big drops ("bộp") are added one by one from a bank of thuds.
+    """
+
+    SPOTS = 4
+
+    def __init__(self, rng, sr, p: RainParams, block):
+        self.rng, self.sr, self.p = rng, sr, p
+        lo = 2.5 * p.roof_low_hz
+        tones = np.exp(rng.uniform(math.log(lo), math.log(max(0.5 * p.roof_high_hz, 1.5 * lo)), 10))
+        self.sheets = []
+        for pan in np.linspace(-1, 1, self.SPOTS) * p.width * 0.8:
+            angle = (pan + 1) * math.pi / 4
+            gains = np.array([[math.cos(angle)], [math.sin(angle)]]) * math.sqrt(2)
+            self.sheets.append(sheet_response(rng, sr, p, tones) * gains)
+        responses = []
+        for sheet in self.sheets:
+            pulse = raised_pulse(rng, sr, 1e-4, 3e-4)
+            responses.append(np.stack([np.convolve(sheet[c], pulse) for c in range(2)]))
+        irs = np.zeros((self.SPOTS, 2, max(r.shape[1] for r in responses)))
+        for i, r in enumerate(responses):
+            irs[i, :, : r.shape[1]] = r
+        irs /= np.sqrt(np.mean(np.sum(irs ** 2, axis=-1)))  # unit energy per channel on average
+        self.small = Convolver(irs.astype(np.float32), block)
+        self.scale = math.sqrt(sr / max(p.roof_rate, 1.0))  # unit RMS for the small drops
+        self.big = Drops(rng, sr, p.roof_big_rate, p.roof_big_level, self._thud)
+
+    def _thud(self, rng):
+        sheet = self.sheets[int(rng.integers(self.SPOTS))]
+        pulse = raised_pulse(rng, self.sr, 6e-4, 2e-3)
+        return _trim(np.stack([np.convolve(sheet[c], pulse) for c in range(2)]))
+
+    def read(self, n, gain):
+        rng = self.rng
+        peak = float(gain.max())
+        count = int(rng.poisson(self.p.roof_rate * peak * n / self.sr))
+        pos = rng.integers(0, n, count)
+        pos = pos[rng.random(count) < gain[pos] / peak]
+        amps = np.exp(rng.normal(-0.25, 0.5, pos.size)) * self.scale  # unit mean square
+        x = np.zeros((self.SPOTS, n), np.float32)
+        np.add.at(x, (rng.integers(0, self.SPOTS, pos.size), pos), amps.astype(np.float32))
+        return self.small.process(x) + self.big.read(n, gain)
 
 
 def _noise(rng, mag, n, channels=2):
@@ -363,10 +476,13 @@ class RainSynth:
         )
         self.rumble = ShapedNoise(rngs[1], sr, lambda f: band(f, 30.0, p.rumble_high_hz, 0.5, 2, 4))
         self.swell = Swell(rngs[2], sr, p.swell_db, p.swell_seconds)
-        self.drops = Drops(rngs[3], sr, p)
+        self.drops = Drops(rngs[3], sr, p.drop_rate, p.drop_level, lambda rng: water_drop(rng, sr, p), p.width)
         self.thunder_rng = rngs[4]
         self.thunders: list[list] = []  # [wave, index into wave at the start of the next chunk]
-        self.bed_rms = math.hypot(p.hiss_level, p.rumble_level)
+        self.roof = None
+        if p.roof_level > 0:
+            self.roof = Roof(np.random.default_rng([seed, 6]), sr, p, int(CHUNK_SECONDS * sr))
+        self.bed_rms = math.sqrt(p.hiss_level ** 2 + p.rumble_level ** 2 + p.roof_level ** 2)
 
     def read(self, n):
         """Return (bed, thunder, swell gain) for the next n samples."""
@@ -375,6 +491,8 @@ class RainSynth:
         bed = widen(self.hiss.read(n), p.width) * (p.hiss_level * gain)
         bed += widen(self.rumble.read(n), p.width * 0.5) * (p.rumble_level * np.sqrt(gain))
         bed += self.drops.read(n, gain)
+        if self.roof:
+            bed += self.roof.read(n, gain) * np.float32(self.p.roof_level)
         return bed, self._thunder(n), gain
 
     def _thunder(self, n):
@@ -405,22 +523,26 @@ def soft_clip(x, threshold=0.7, ceiling=0.89):
     return x
 
 
-def loudness_lufs(x: np.ndarray, sr: int) -> float:
-    """Ungated BS.1770 loudness of a (channels, n) signal, K-weighting applied in the frequency domain."""
-    f = np.fft.rfftfreq(x.shape[1], 1.0 / sr)
-    z = np.exp(-2j * np.pi * np.minimum(f, 24000.0) / 48000.0)  # BS.1770 coefficients are given at 48 kHz
+def k_weighting(f):
+    """Complex BS.1770 K-weighting response at frequencies f (Hz); coefficients are given at 48 kHz."""
+    z = np.exp(-2j * np.pi * np.minimum(f, 24000.0) / 48000.0)
     shelf = (1.53512485958697 - 2.69169618940638 * z + 1.19839281085285 * z * z) / (
         1 - 1.69065929318241 * z + 0.73248077421585 * z * z)
     highpass = (1 - 2 * z + z * z) / (1 - 1.99004745483398 * z + 0.99007225036621 * z * z)
-    power = np.abs(np.fft.rfft(x, axis=-1)) ** 2 * np.abs(shelf * highpass) ** 2
+    return shelf * highpass
+
+
+def loudness_lufs(x: np.ndarray, sr: int) -> float:
+    """Ungated BS.1770 loudness of a (channels, n) signal, K-weighting applied in the frequency domain."""
+    f = np.fft.rfftfreq(x.shape[1], 1.0 / sr)
+    power = np.abs(np.fft.rfft(x, axis=-1)) ** 2 * np.abs(k_weighting(f)) ** 2
     mean_square = 2.0 * power[:, 1:].sum(axis=-1) / x.shape[1] ** 2
     return -0.691 + 10 * math.log10(max(float(mean_square.sum()), 1e-20))
 
 
-def render(p: RainParams, seed: int, seconds: float, sink, sr=SAMPLE_RATE, loudness=-18.0, fade=3.0, progress=None):
-    """Stream `seconds` of rain to sink(float32 array of shape (2, n)) in chunks."""
+def rain_chunks(p: RainParams, seed: int, total: int, sr=SAMPLE_RATE, loudness=-18.0):
+    """Yield float32 (2, n) chunks of rain, `total` samples in all, with the bed at `loudness` LUFS."""
     synth = RainSynth(p, seed, sr)
-    total = int(round(seconds * sr))
     chunk = int(CHUNK_SECONDS * sr)
 
     def chunks():
@@ -439,21 +561,34 @@ def render(p: RainParams, seed: int, seconds: float, sink, sr=SAMPLE_RATE, loudn
         count += item[0].shape[1]
         if count >= min(total, CALIBRATION_SECONDS * sr):
             break
+    if not warmup:
+        return
     nominal = np.concatenate([bed / gain for bed, _, gain in warmup], axis=1)
-    gain_out = 10 ** ((loudness - loudness_lufs(nominal, sr)) / 20)
+    gain_out = np.float32(10 ** ((loudness - loudness_lufs(nominal, sr)) / 20))
     del nominal
+    for bed, thunder, _ in itertools.chain(warmup, stream):
+        yield (bed + thunder) * gain_out
+
+
+def finish(chunks, total, sink, sr=SAMPLE_RATE, fade=3.0, progress=None):
+    """Apply fade in/out and the soft ceiling to a stream of chunks and hand them to sink."""
     fade_n = min(int(fade * sr), total // 2)
     pos = 0
-    for bed, thunder, _ in itertools.chain(warmup, stream):
-        n = bed.shape[1]
-        y = (bed + thunder) * np.float32(gain_out)
+    for y in chunks:
+        n = y.shape[1]
         if fade_n and (pos < fade_n or pos + n > total - fade_n):
             idx = np.arange(pos, pos + n)
-            y *= (np.sin(np.minimum(1.0, np.minimum(idx, total - 1 - idx) / fade_n) * math.pi / 2) ** 2).astype(np.float32)
+            y = y * (np.sin(np.minimum(1.0, np.minimum(idx, total - 1 - idx) / fade_n) * math.pi / 2) ** 2).astype(np.float32)
         sink(soft_clip(y))
         pos += n
         if progress:
             progress(pos / total)
+
+
+def render(p: RainParams, seed: int, seconds: float, sink, sr=SAMPLE_RATE, loudness=-18.0, fade=3.0, progress=None):
+    """Stream `seconds` of rain to sink(float32 array of shape (2, n)) in chunks."""
+    total = int(round(seconds * sr))
+    finish(rain_chunks(p, seed, total, sr, loudness), total, sink, sr, fade, progress)
 
 
 class FFmpegSink:
@@ -492,11 +627,15 @@ class FFmpegSink:
                 pass
         if self.proc.wait() != 0:
             self.log.seek(0)
-            raise RuntimeError("ffmpeg lỗi: " + self.log.read().decode(errors="replace").strip())
+            message = self.log.read().decode(errors="replace").strip()
+            self.log.close()
+            raise RuntimeError("ffmpeg lỗi: " + message)
+        self.log.close()
 
     def abort(self):
         self.proc.kill()
         self.proc.wait()
+        self.log.close()
 
 
 def run_job(job: dict) -> dict:
@@ -535,25 +674,28 @@ def append_manifest(path: Path, rows: list[dict]):
         writer.writerows(rows)
 
 
-def run_jobs(jobs: list[dict], workers: int, manifest: Path):
+def run_jobs(jobs: list[dict], workers: int, manifest: Path, func=None):
+    """Run render jobs (sequentially or in worker processes), appending each result to manifest."""
+    func = func or run_job
     total, done, failed = len(jobs), 0, 0
 
     def report(row):
         nonlocal done
         done += 1
         append_manifest(manifest, [row])
-        print(f"[{done}/{total}] {row['file']}  preset={row['preset']} seed={row['seed']}  ({row['render_seconds']}s)")
+        kind = f"preset={row['preset']}" if "preset" in row else f"recipe={row.get('recipe', '')}"
+        print(f"[{done}/{total}] {row['file']}  {kind} seed={row['seed']}  ({row['render_seconds']}s)")
 
     if workers <= 1:
         for job in jobs:
             try:
-                report(run_job(job))
+                report(func(job))
             except Exception as e:  # keep going with the remaining files
                 failed += 1
                 print(f"LỖI {job['output']}: {e}", file=sys.stderr)
     else:
         with ProcessPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(run_job, job): job for job in jobs}
+            futures = {pool.submit(func, job): job for job in jobs}
             for future in as_completed(futures):
                 try:
                     report(future.result())
@@ -694,7 +836,7 @@ def cmd_video(args):
 def build_parser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("-p", "--preset", type=parse_presets, default=["medium"],
-                        help="kiểu mưa: light, medium, heavy, storm, roof; nhiều kiểu cách nhau dấu phẩy "
+                        help="kiểu mưa: " + ", ".join(PRESETS) + "; nhiều kiểu cách nhau dấu phẩy "
                              "(mỗi file chọn ngẫu nhiên một kiểu) hoặc all (mặc định: medium)")
     common.add_argument("-v", "--variation", type=float, default=0.15,
                         help="mức khác nhau giữa các bản so với preset; 0 = giống hệt preset, "
