@@ -74,7 +74,7 @@ class Layer:
 @dataclass
 class Recipe:
     name: str = "Công thức mới"
-    loudness: float = -18.0  # độ lớn tổng, LUFS
+    loudness: float = -18.0  # độ lớn các lớp nền, LUFS (âm rời rạc như sấm cộng thêm lên trên)
     variation: float = 0.15  # mức khác nhau giữa các bản
     fade: float = 3.0  # fade vào/ra, giây
     layers: list[Layer] = field(default_factory=list)

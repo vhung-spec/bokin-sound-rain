@@ -12,6 +12,7 @@ Gợi ý cách chia (tên thư mục tuỳ bạn, nên đặt không dấu):
 | `mua_cua_so/` | mưa gõ vào kính cửa sổ | nền liên tục |
 | `mang_xoi/` | nước chảy từ máng xối, mái hiên | nền liên tục |
 | `con_trung/` | tiếng côn trùng, ếch nhái đêm mưa | nền liên tục |
+| `gio/` | tiếng gió, gió lùa qua cây, qua khe cửa | nền liên tục |
 | `giot_nuoc/` | từng giọt nước rơi lẻ, mỗi file một giọt | âm rời rạc |
 | `sam/` | tiếng sấm, mỗi file một tiếng | âm rời rạc |
 

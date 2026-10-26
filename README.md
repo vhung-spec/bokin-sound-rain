@@ -51,6 +51,7 @@ Nguồn của một lớp có thể là:
 - một thư mục trong thư viện
 - một kiểu mưa tổng hợp của `rain.py` (`synth:roof`, `synth:medium`…)
 - tiếng sấm hoặc giọt nước tổng hợp (`synth:thunder`, `synth:drip`)
+- tiếng gió tổng hợp (`synth:wind`), hoặc bản thu gió trong thư mục `gio/`
 
 Có sẵn 3 công thức mẫu: `mai_ton_dem` (mưa mái tôn đêm khuya), `mua_rao_co_sam` (mưa rào có sấm),
 `mua_em_de_ngu` (mưa êm dễ ngủ). Các lớp bản thu trong đó dùng thư mục `mai_ton`, `mua_nen`, `giot_nuoc`, `sam`.
@@ -71,6 +72,9 @@ python rainmix.py video mai_ton_dem videos/ --outdir output
 
 Tuỳ chọn chung: `-s` (seed bắt đầu), `--loudness` và `-v` (ghi đè độ lớn tổng và mức khác nhau của
 công thức), `--library` và `--recipes` (đường dẫn thư mục khác).
+
+Độ lớn (`loudness`) được cân trên các **lớp nền**. Sấm và giọt nước cộng thêm lên trên, nên công thức
+nhiều sấm sẽ to hơn con số đặt khoảng 0.5–1 dB.
 
 Lần đầu dùng một thư mục, Rain Mixer cần đo độ dài và độ lớn từng file nên sẽ chậm hơn.
 Kết quả được lưu trong `library/.rainmix-cache.json`, nên các lần sau nhanh.
@@ -101,6 +105,8 @@ nghe cùng một phong cách nhưng không bản nào giống bản nào.
 | `storm` | Mưa giông có sấm (khoảng 1 tiếng sấm mỗi 1–2 phút) |
 | `roof` | Mưa rào trên mái tôn: tiếng ào ào kim loại, xen tiếng "bộp" của giọt to |
 | `roof_light` | Mưa nhẹ trên mái tôn: lộp độp từng tiếng |
+| `windy` | Mưa vừa kèm gió: gió ào ào có cơn giật, lá cây xào xạc, thỉnh thoảng hú qua khe; cơn giật làm mưa quất mạnh hơn |
+| `wind` | Chỉ có gió, không mưa: dùng làm một lớp trong Rain Mixer |
 
 ### Cách dùng
 
@@ -140,6 +146,10 @@ Chế độ video ghi âm thanh AAC 256 kbps (khoảng 115 MB mỗi giờ).
 Muốn chỉnh âm sắc, sửa bảng `PRESETS` trong `rain.py`. Ý nghĩa từng thông số được chú thích trong `RainParams`.
 Mái tôn được mô phỏng như **một tấm kim loại mỏng dùng chung**. Mỗi giọt đập vào tấm tôn tại một
 vị trí khác nhau, làm rung cùng một tập cộng hưởng: giọt nhỏ kêu "tách", giọt to kêu "bộp".
+
+Gió được điều khiển bởi một đường "sức gió" dao động chậm, có các cơn giật (mặc định khoảng 3 cơn mỗi phút).
+Theo sức gió có ba thành phần: tiếng "ào" (càng mạnh càng cao), tiếng hú qua khe (chỉ khi gió mạnh)
+và tiếng lá xào xạc (dày hơn khi giật). Mỗi seed cho một chuỗi cơn giật khác.
 
 Chạy toàn bộ test bằng `python -m unittest test_rain test_rainmix`.
 

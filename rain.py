@@ -71,6 +71,15 @@ class RainParams:
     roof_high_hz: float = 6000.0
     roof_decay_ms: float = 30.0  # độ ngân của tấm tôn ở 1 kHz
     roof_ring: float = 0.25  # 0 = tiếng tôn đục, 1 = ngân thành tiếng rõ
+    # Gió: một đường "sức gió" dao động chậm và có cơn giật (0 = không có gió)
+    wind_level: float = 0.0  # độ lớn tiếng gió
+    wind_speed: float = 0.5  # sức gió trung bình, 0..1
+    wind_gusts: float = 0.5  # độ mạnh cơn giật, 0..1
+    wind_gust_per_min: float = 3.0  # số cơn giật trung bình mỗi phút
+    wind_howl: float = 0.3  # tiếng hú qua khe cửa, 0..1
+    wind_howl_hz: float = 500.0  # cao độ tiếng hú khi gió vừa
+    wind_leaves: float = 0.4  # tiếng lá cây xào xạc, 0..1
+    wind_drive_db: float = 0.0  # cơn giật làm mưa to thêm bao nhiêu dB
 
 
 _HEAVY = RainParams(
@@ -78,6 +87,14 @@ _HEAVY = RainParams(
     texture=0.35, texture_rate=3500, rumble_level=0.5, rumble_high_hz=500,
     width=0.9, drop_rate=110, drop_level=0.9, drop_low_hz=1200, drop_high_hz=4000,
     drop_decay_ms=14, drop_bubble=0.25, swell_db=5, swell_seconds=25,
+    thunder_per_min=0, thunder_level=0,
+)
+
+_MEDIUM = RainParams(
+    hiss_level=0.8, hiss_low_hz=600, hiss_high_hz=9000, hiss_tilt=0.25,
+    texture=0.45, texture_rate=1800, rumble_level=0.3, rumble_high_hz=350,
+    width=0.85, drop_rate=45, drop_level=1.1, drop_low_hz=1500, drop_high_hz=4500,
+    drop_decay_ms=12, drop_bubble=0.3, swell_db=4, swell_seconds=30,
     thunder_per_min=0, thunder_level=0,
 )
 
@@ -99,13 +116,7 @@ PRESETS: dict[str, tuple[str, RainParams]] = {
         drop_decay_ms=10, drop_bubble=0.35, swell_db=3, swell_seconds=40,
         thunder_per_min=0, thunder_level=0,
     )),
-    "medium": ("Mưa vừa, đều hạt", RainParams(
-        hiss_level=0.8, hiss_low_hz=600, hiss_high_hz=9000, hiss_tilt=0.25,
-        texture=0.45, texture_rate=1800, rumble_level=0.3, rumble_high_hz=350,
-        width=0.85, drop_rate=45, drop_level=1.1, drop_low_hz=1500, drop_high_hz=4500,
-        drop_decay_ms=12, drop_bubble=0.3, swell_db=4, swell_seconds=30,
-        thunder_per_min=0, thunder_level=0,
-    )),
+    "medium": ("Mưa vừa, đều hạt", _MEDIUM),
     "heavy": ("Mưa lớn, nặng hạt", _HEAVY),
     "storm": ("Mưa giông có sấm", replace(
         _HEAVY, swell_db=6, swell_seconds=20, thunder_per_min=0.6, thunder_level=2.5,
@@ -115,10 +126,18 @@ PRESETS: dict[str, tuple[str, RainParams]] = {
         _ROOF, hiss_level=0.12, rumble_level=0.06, drop_rate=2, swell_db=3, swell_seconds=40,
         roof_rate=30, roof_big_rate=6, roof_big_level=2.5, roof_decay_ms=18, roof_ring=0.35,
     )),
+    "windy": ("Mưa kèm gió", replace(
+        _MEDIUM, swell_db=3, wind_level=1.5, wind_speed=0.45, wind_gusts=0.6, wind_gust_per_min=3,
+        wind_howl=0.3, wind_howl_hz=480, wind_leaves=0.5, wind_drive_db=4,
+    )),
+    "wind": ("Chỉ có gió (để trộn với lớp mưa khác)", replace(
+        _MEDIUM, hiss_level=0, rumble_level=0, drop_rate=0, swell_db=0, wind_level=1.0, wind_speed=0.5,
+        wind_gusts=0.6, wind_gust_per_min=3, wind_howl=0.35, wind_howl_hz=520, wind_leaves=0.5,
+    )),
 }
 
 # Parameters limited to 0..1 are varied additively, everything else multiplicatively.
-BOUNDED = {"width", "texture", "drop_bubble", "roof_ring"}
+BOUNDED = {"width", "texture", "drop_bubble", "roof_ring", "wind_speed", "wind_gusts", "wind_howl", "wind_leaves"}
 
 
 def vary_params(base: RainParams, variation: float, rng: np.random.Generator) -> RainParams:
@@ -437,6 +456,128 @@ class Roof:
         return self.small.process(x) + self.big.read(n, gain)
 
 
+class VaryingNoise:
+    """Noise whose spectrum follows a control value, frame by frame.
+
+    Frames are overlap-added like ShapedNoise. magnitude(f, v) gives the spectral shape for
+    control values v (shape (m, 1)); each frame is normalised to unit variance and then scaled
+    by its own gain, so the window crossfades smoothly between successive shapes and levels.
+    """
+
+    def __init__(self, rng, sr, magnitude, channels=2, frame=4096, texture=0.0, texture_rate=None):
+        self.rng, self.sr, self.channels, self.frame, self.hop = rng, sr, channels, frame, frame // 2
+        self.freqs = np.maximum(np.fft.rfftfreq(frame, 1.0 / sr), 1.0)
+        self.magnitude, self.texture, self.texture_rate = magnitude, texture, texture_rate
+        n = np.arange(frame)
+        self.window = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * n / frame)).astype(np.float32)
+        self.carry = np.zeros((channels, self.hop), np.float32)
+
+    def hops(self, values, gains):
+        """One frame per control value; returns (channels, len(values) * hop) samples."""
+        rng, frame, m = self.rng, self.frame, values.size
+        mag = self.magnitude(self.freqs[None, :], values[:, None]) * np.ones((m, 1))
+        mag[:, 0] = 0.0
+        mag *= np.sqrt(frame / (2.0 * np.sum(mag ** 2, axis=1, keepdims=True) + 1e-20))
+        x = rng.standard_normal((self.channels, m, frame), dtype=np.float32)
+        if self.texture > 0:
+            x *= math.sqrt(1.0 - self.texture)
+            per_frame = np.maximum(self.texture_rate(values) * frame / self.sr, 1e-3)
+            counts = rng.poisson(np.broadcast_to(per_frame, (self.channels, m))).ravel()
+            total = int(counts.sum())
+            if total:
+                rows = np.repeat(np.arange(counts.size), counts)
+                scale = np.sqrt(self.texture * frame / np.tile(per_frame, self.channels))[rows]
+                amps = np.exp(rng.normal(-0.35 ** 2, 0.35, total)) * rng.choice([-1.0, 1.0], total) * scale
+                np.add.at(x.reshape(-1, frame), (rows, rng.integers(0, frame, total)), amps.astype(np.float32))
+        y = np.fft.irfft(np.fft.rfft(x, axis=-1) * (mag * gains[:, None]).astype(np.float32), n=frame, axis=-1)
+        y = y.astype(np.float32) * self.window
+        first, second = y[..., : self.hop], y[..., self.hop :]
+        previous = np.concatenate([self.carry[:, None, :], second[:, :-1, :]], axis=1)
+        self.carry = second[:, -1, :]
+        return (first + previous).reshape(self.channels, -1)
+
+
+def _resonance(f, center, q):
+    return 1.0 / np.sqrt(1.0 + (q * (f / center - center / f)) ** 2)
+
+
+class Wind:
+    """Wind driven by one wind-speed curve that wanders slowly and rises in gusts.
+
+    Three parts follow it: a broad whoosh whose centre rises with the speed, a whistling howl
+    through gaps that only comes in strong wind, and rustling leaves that get denser in gusts.
+    """
+
+    def __init__(self, seed, sr, p: RainParams):
+        self.sr, self.p = sr, p
+        self.rng = np.random.default_rng([seed, 7, 0])
+        self.body = VaryingNoise(np.random.default_rng([seed, 7, 1]), sr,
+                                 lambda f, v: _resonance(f, 90 + 520 * v, 0.9))
+        self.howl = VaryingNoise(np.random.default_rng([seed, 7, 2]), sr, self._howl_shape)
+        self.leaves = VaryingNoise(np.random.default_rng([seed, 7, 3]), sr, lambda f, v: band(f, 1800, 9000),
+                                   texture=0.7, texture_rate=lambda v: 300 + 3000 * v)
+        self.hop = self.body.hop
+        self.dt = self.hop / sr
+        self.slow, self.gusts, self.last = 0.0, [], max(p.wind_speed, 0.02)
+        self.audio = np.zeros((2, 0), np.float32)
+        self.speed = np.zeros(0, np.float32)
+        # Gusts only ever add, so the average wind is louder than the base speed. Simulate a
+        # stretch of wind to learn by how much, so loudness calibration targets the average.
+        probe = Wind.__new__(Wind)
+        probe.p, probe.dt, probe.rng, probe.slow, probe.gusts = p, self.dt, np.random.default_rng([seed, 7, 9]), 0.0, []
+        relative = probe._speeds(int(1200 / self.dt)) / max(p.wind_speed, 0.05)
+        self.mean_gain = math.sqrt(float(np.mean(relative ** 3)))
+        # Start in the middle of the weather rather than in a calm before the first gust.
+        self.last = float(self._speeds(int(self.rng.uniform(60, 180) / self.dt))[-1])
+
+    def _howl_shape(self, f, v):
+        center = self.p.wind_howl_hz * (0.7 + 0.6 * v)
+        return _resonance(f, center, 14) + 0.5 * _resonance(f, center * 1.48, 18)
+
+    def _speeds(self, m):
+        p, rng = self.p, self.rng
+        c = math.exp(-self.dt / 20.0)
+        k = math.sqrt(1 - c * c)
+        gust_chance = p.wind_gust_per_min / 60 * self.dt
+        out = np.empty(m)
+        for i, (n, r) in enumerate(zip(rng.standard_normal(m).tolist(), rng.random(m).tolist())):
+            self.slow = c * self.slow + k * n
+            if r < gust_chance:  # [age, attack, decay, strength]
+                self.gusts.append([0.0, rng.uniform(1.0, 3.5), rng.uniform(2.5, 8.0), p.wind_gusts * rng.uniform(0.4, 1.2)])
+            gust, alive = 0.0, []
+            for g in self.gusts:
+                age, attack, decay, strength = g
+                if age < attack:
+                    s = age / attack
+                    gust += strength * s * s * (3 - 2 * s)
+                else:
+                    gust += strength * math.exp(-(age - attack) / decay)
+                g[0] += self.dt
+                if age < attack + 6 * decay:
+                    alive.append(g)
+            self.gusts = alive
+            out[i] = max(0.02, p.wind_speed * math.exp(0.35 * self.slow) + gust)
+        return out
+
+    def read(self, n):
+        """Return (stereo wind audio, wind speed per sample) for the next n samples."""
+        p = self.p
+        while self.audio.shape[1] < n:
+            v = self._speeds(16)
+            audio = self.body.hops(v, v ** 1.5)
+            if p.wind_howl > 0:
+                audio += self.howl.hops(v, 1.5 * p.wind_howl * np.maximum(v - 0.2, 0.0) ** 1.5)
+            if p.wind_leaves > 0:
+                audio += self.leaves.hops(v, 0.8 * p.wind_leaves * v ** 1.2)
+            speed = np.interp(np.arange(v.size * self.hop) / self.hop, np.arange(v.size + 1), np.concatenate([[self.last], v]))
+            self.last = v[-1]
+            self.audio = np.concatenate([self.audio, widen(audio, p.width) * np.float32(p.wind_level)], axis=1)
+            self.speed = np.concatenate([self.speed, speed.astype(np.float32)])
+        audio, self.audio = self.audio[:, :n], self.audio[:, n:]
+        speed, self.speed = self.speed[:n], self.speed[n:]
+        return audio, speed
+
+
 def _noise(rng, mag, n, channels=2):
     """One-shot noise of length n with the given rfft magnitude, unit RMS per channel."""
     spec = (rng.standard_normal((channels, mag.size)) + 1j * rng.standard_normal((channels, mag.size))) * mag
@@ -482,18 +623,35 @@ class RainSynth:
         self.roof = None
         if p.roof_level > 0:
             self.roof = Roof(np.random.default_rng([seed, 6]), sr, p, int(CHUNK_SECONDS * sr))
+        self.wind = Wind(seed, sr, p) if p.wind_level > 0 else None
         self.bed_rms = math.sqrt(p.hiss_level ** 2 + p.rumble_level ** 2 + p.roof_level ** 2)
 
     def read(self, n):
-        """Return (bed, thunder, swell gain) for the next n samples."""
+        """Return (rain bed, thunder, rain gain, wind, wind gain) for the next n samples.
+
+        Without wind, wind is None. The gains are how much the swell and the gusts raise each
+        part above its nominal level; calibration divides them out.
+        """
         p = self.p
         gain = self.swell.read(n).astype(np.float32)
-        bed = widen(self.hiss.read(n), p.width) * (p.hiss_level * gain)
-        bed += widen(self.rumble.read(n), p.width * 0.5) * (p.rumble_level * np.sqrt(gain))
-        bed += self.drops.read(n, gain)
+        wind = wind_gain = None
+        if self.wind:
+            wind, speed = self.wind.read(n)
+            relative = (speed / max(p.wind_speed, 0.05)) ** 1.5 / self.wind.mean_gain
+            wind_gain = np.clip(relative, 0.05, 20.0).astype(np.float32)
+            if p.wind_drive_db:  # gusts drive the rain harder
+                drive = np.clip((speed - p.wind_speed) / max(p.wind_speed, 0.1), -1.0, 1.5)
+                gain = gain * (10 ** (p.wind_drive_db * drive / 20)).astype(np.float32)
+        bed = np.zeros((2, n), np.float32)
+        if p.hiss_level > 0:
+            bed = widen(self.hiss.read(n), p.width) * (p.hiss_level * gain)
+        if p.rumble_level > 0:
+            bed += widen(self.rumble.read(n), p.width * 0.5) * (p.rumble_level * np.sqrt(gain))
+        if p.drop_rate > 0:
+            bed += self.drops.read(n, gain)
         if self.roof:
             bed += self.roof.read(n, gain) * np.float32(self.p.roof_level)
-        return bed, self._thunder(n), gain
+        return bed, self._thunder(n), gain, wind, wind_gain
 
     def _thunder(self, n):
         out = np.zeros((2, n), np.float32)
@@ -563,11 +721,12 @@ def rain_chunks(p: RainParams, seed: int, total: int, sr=SAMPLE_RATE, loudness=-
             break
     if not warmup:
         return
-    nominal = np.concatenate([bed / gain for bed, _, gain in warmup], axis=1)
+    nominal = np.concatenate([bed / gain + (0 if wind is None else wind / wind_gain)
+                              for bed, _, gain, wind, wind_gain in warmup], axis=1)
     gain_out = np.float32(10 ** ((loudness - loudness_lufs(nominal, sr)) / 20))
     del nominal
-    for bed, thunder, _ in itertools.chain(warmup, stream):
-        yield (bed + thunder) * gain_out
+    for bed, thunder, _, wind, _ in itertools.chain(warmup, stream):
+        yield (bed + thunder + (0 if wind is None else wind)) * gain_out
 
 
 def finish(chunks, total, sink, sr=SAMPLE_RATE, fade=3.0, progress=None):

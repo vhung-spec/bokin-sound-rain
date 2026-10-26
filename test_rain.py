@@ -100,6 +100,27 @@ class RenderTest(unittest.TestCase):
         y = roof.read(48000 * 4, np.ones(48000 * 4, np.float32))
         self.assertAlmostEqual(float(np.sqrt(np.mean(y ** 2))), 1.0, delta=0.6)
 
+    def test_varying_noise_has_unit_variance(self):
+        noise = rain.VaryingNoise(np.random.default_rng(0), 48000, lambda f, v: rain._resonance(f, 200 + 800 * v, 2.0))
+        values = np.linspace(0.1, 1.0, 400)
+        x = noise.hops(values, np.ones_like(values))
+        self.assertAlmostEqual(float(x[:, 4096:].std()), 1.0, delta=0.08)
+
+    def test_wind_gusts_and_level(self):
+        p = rain.PRESETS["wind"][1]
+        wind = rain.Wind(3, 48000, p)
+        speed = wind._speeds(int(600 / wind.dt))  # ten minutes
+        self.assertGreater(float(speed.max()), 2 * p.wind_speed)  # gusts
+        self.assertGreater(float(np.median(speed)), 0.5 * p.wind_speed)
+        self.assertIsNone(rain.RainSynth(rain.PRESETS["medium"][1], 1).wind)
+
+        # A single minute can be calm or gusty; on average the level hits the target.
+        renders = [render_array(p, seed, 60.0, fade=0, loudness=-20.0).astype(np.float64) for seed in range(4)]
+        self.assertAlmostEqual(float(np.mean([rain.loudness_lufs(y, 48000) for y in renders])), -20.0, delta=2.0)
+        y = renders[0]
+        short = [rain.loudness_lufs(y[:, i : i + 144000], 48000) for i in range(0, y.shape[1] - 144000, 48000)]
+        self.assertGreater(float(np.percentile(short, 90) - np.percentile(short, 10)), 5.0)
+
     def test_loudness_hits_target(self):
         for name in ("light", "roof"):
             y = render_array(rain.PRESETS[name][1], 3, 20.0, fade=0, loudness=-20.0)

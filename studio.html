@@ -223,7 +223,7 @@ const LAYER_SLIDERS = [
   { key: "min_gap_seconds", label: "Cách nhau ít nhất", pow: [120, 2], fmt: (v) => `${v.toFixed(1)} giây`, when: isEvents },
 ];
 const MASTER_SLIDERS = [
-  { key: "loudness", label: "Độ lớn tổng", min: -30, max: -10, step: 0.5, fmt: (v) => `${v.toFixed(1)} LUFS` },
+  { key: "loudness", label: "Độ lớn các lớp nền (sấm, giọt cộng thêm)", min: -30, max: -10, step: 0.5, fmt: (v) => `${v.toFixed(1)} LUFS` },
   { key: "variation", label: "Mức khác nhau giữa các bản", min: 0, max: 0.5, step: 0.01, fmt: (v) => v ? `±${Math.round((Math.exp(v) - 1) * 100)}%` : "giống hệt" },
   { key: "fade", label: "Fade vào/ra", min: 0, max: 10, step: 0.5, fmt: (v) => `${v.toFixed(1)} giây` },
 ];
