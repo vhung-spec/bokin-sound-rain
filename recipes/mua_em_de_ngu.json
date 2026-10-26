@@ -1,0 +1,11 @@
+{
+  "name": "Mưa êm dễ ngủ",
+  "loudness": -20,
+  "variation": 0.15,
+  "fade": 5,
+  "layers": [
+    {"name": "Mưa nền (bản thu)", "type": "bed", "source": "mua_nen", "gain_db": 0, "lowpass_hz": 8000, "swell_db": 2, "swell_seconds": 45},
+    {"name": "Mưa vừa (tổng hợp)", "type": "bed", "source": "synth:medium", "gain_db": -2, "lowpass_hz": 7000, "swell_db": 0},
+    {"name": "Giọt nước lác đác", "type": "events", "source": "synth:drip", "gain_db": -16, "per_minute": 6, "gain_spread_db": 8, "pan_spread": 0.9}
+  ]
+}

@@ -2,18 +2,94 @@
 
 Công cụ tạo tiếng mưa hàng loạt cho video mưa, kèm tổng hợp các công cụ và dự án mã nguồn mở liên quan.
 
-## Tạo tiếng mưa hàng loạt bằng `rain.py`
+- **Rain Mixer Studio** (`rainmix.py`): phòng mix trên trình duyệt. Trộn nhiều lớp **bản thu thật**
+  và tiếng tổng hợp, nghe thử ngay, lưu thành "công thức", rồi xuất hàng loạt bản, mỗi bản một khác.
+- **`rain.py`**: tạo tiếng mưa hoàn toàn bằng thuật toán, không cần bản thu.
+
+## Cài đặt
+
+- Python 3.9 trở lên, rồi chạy `pip install -r requirements.txt` (chỉ cần numpy)
+- [ffmpeg](https://ffmpeg.org/download.html) (có cả `ffprobe`)
+
+## Rain Mixer Studio
+
+Tiếng mưa nghe thật nhất vẫn đến từ **bản thu thật**. Rain Mixer lấy các bản thu của bạn,
+cắt ra những đoạn ngẫu nhiên và nối mượt bằng crossfade dài 3 giây, nên một bản thu 10 phút
+có thể thành bản mưa 3 giờ mà không lặp lại rõ. Nó trộn thêm các lớp khác (mái tôn, mưa ngoài sân,
+giọt nước, sấm), rồi cân âm lượng tổng theo LUFS.
+Mỗi lần xuất với seed mới, bản mix sẽ khác đi:
+
+- chọn đoạn khác và nối theo thứ tự khác
+- âm lượng mỗi lớp lệch nhẹ (khoảng ±1.5 dB), tần số lọc lệch nhẹ (±16%)
+- tốc độ phát lệch nhẹ (±3%), nên cao độ và nhịp mưa đổi theo
+- tiếng sấm và giọt nước rơi vào lúc khác
+
+### Bắt đầu
+
+1. Chép bản thu vào các thư mục con của `library/`, ví dụ `library/mai_ton/`, `library/sam/`
+   (xem [library/README.md](library/README.md)). Chưa có bản thu thì vẫn mix được bằng tiếng tổng hợp.
+2. Mở Studio: bấm đúp `mo_studio.bat` (Windows) hoặc `mo_studio.sh` (macOS/Linux),
+   hoặc chạy `python rainmix.py studio`. Trình duyệt sẽ mở `http://127.0.0.1:8765/`.
+3. Thêm lớp, kéo thanh trượt. Studio tự trộn lại 30 giây để bạn nghe ngay.
+   - **S**: nghe riêng một lớp. **▶** trên lớp: nghe một bản thu gốc.
+   - **🎲 Bản khác**: nghe một biến thể khác của cùng công thức.
+   - Nhấp đúp vào thanh trượt để trả về mặc định.
+4. Bấm **Lưu**. Công thức được lưu thành file JSON trong `recipes/`.
+5. **Xuất file âm thanh** (chọn số bản và độ dài), hoặc nhập thư mục video rồi bấm
+   **Ghép tiếng mưa vào video**: mỗi video nhận một bản mix riêng, dài đúng bằng video.
+   File ra nằm trong `output/`, kèm `manifest.csv` ghi seed và thông số từng bản.
+
+### Lớp âm thanh
+
+| Kiểu | Dùng cho | Thanh chỉnh |
+|---|---|---|
+| **Nền liên tục** | mưa rơi, mái tôn, máng xối, côn trùng | âm lượng, cắt trầm/chói, độ rộng stereo, tốc độ phát, to nhỏ dần |
+| **Âm rời rạc** | sấm, giọt nước to, cành cây rơi | tần suất, chênh to nhỏ giữa các lần, trải trái–phải, khoảng cách tối thiểu |
+
+Nguồn của một lớp có thể là:
+
+- một thư mục trong thư viện
+- một kiểu mưa tổng hợp của `rain.py` (`synth:roof`, `synth:medium`…)
+- tiếng sấm hoặc giọt nước tổng hợp (`synth:thunder`, `synth:drip`)
+
+Có sẵn 3 công thức mẫu: `mai_ton_dem` (mưa mái tôn đêm khuya), `mua_rao_co_sam` (mưa rào có sấm),
+`mua_em_de_ngu` (mưa êm dễ ngủ). Các lớp bản thu trong đó dùng thư mục `mai_ton`, `mua_nen`, `giot_nuoc`, `sam`.
+Thư mục nào còn trống thì lớp đó được bỏ qua kèm cảnh báo.
+
+### Dùng bằng dòng lệnh
+
+```bash
+# Một bản 10 phút
+python rainmix.py render mai_ton_dem -d 10m -o mai_ton.flac
+
+# 20 bản, mỗi bản 1 giờ, xuất song song 4 bản
+python rainmix.py batch mai_ton_dem -n 20 -d 1h --outdir output -j 4
+
+# Một bản mix riêng cho mỗi video trong thư mục videos/
+python rainmix.py video mai_ton_dem videos/ --outdir output
+```
+
+Tuỳ chọn chung: `-s` (seed bắt đầu), `--loudness` và `-v` (ghi đè độ lớn tổng và mức khác nhau của
+công thức), `--library` và `--recipes` (đường dẫn thư mục khác).
+
+Lần đầu dùng một thư mục, Rain Mixer cần đo độ dài và độ lớn từng file nên sẽ chậm hơn.
+Kết quả được lưu trong `library/.rainmix-cache.json`, nên các lần sau nhanh.
+Trên máy thử, công thức `mai_ton_dem` (6 lớp, có 2 lớp tổng hợp) xuất 1 giờ mất khoảng 3,5 phút
+trên một nhân CPU và dùng khoảng 300 MB RAM, dù bản dài bao nhiêu. Lớp từ bản thu nhanh hơn lớp tổng hợp.
+
+### Lấy bản thu thật ở đâu
+
+- **Tự thu** bằng điện thoại hoặc máy ghi âm: an toàn nhất về bản quyền, và là âm thanh riêng của kênh bạn.
+- **Freesound** (lọc giấy phép CC0), **Pixabay Sound Effects**, **gói Sonniss GDC**: xem bảng giấy phép ở cuối trang.
+- **Stable Audio Open** chạy trên máy: tạo tiếng mưa từ mô tả chữ, dùng thương mại được nếu doanh thu dưới 1 triệu USD/năm.
+
+## Tạo tiếng mưa bằng thuật toán: `rain.py`
 
 `rain.py` tổng hợp tiếng mưa bằng thuật toán, không dùng file thu âm hay mô hình AI,
 nên âm thanh hoàn toàn thuộc về bạn. Mỗi bản dùng một **seed** riêng: vị trí từng giọt mưa,
 nhịp mưa to nhỏ và tiếng sấm đều khác nhau. Các thông số như độ dày hạt, độ trầm, độ rộng
 stereo cũng lệch nhẹ (mặc định khoảng ±16%) so với kiểu mưa gốc. Nhờ vậy các video
 nghe cùng một phong cách nhưng không bản nào giống bản nào.
-
-### Cài đặt
-
-- Python 3.9 trở lên, rồi chạy `pip install -r requirements.txt` (chỉ cần numpy)
-- [ffmpeg](https://ffmpeg.org/download.html) (có cả `ffprobe`)
 
 ### Kiểu mưa (preset)
 
@@ -23,7 +99,8 @@ nghe cùng một phong cách nhưng không bản nào giống bản nào.
 | `medium` | Mưa vừa, đều hạt (mặc định) |
 | `heavy` | Mưa lớn, nặng hạt |
 | `storm` | Mưa giông có sấm (khoảng 1 tiếng sấm mỗi 1–2 phút) |
-| `roof` | Mưa trên mái tôn |
+| `roof` | Mưa rào trên mái tôn: tiếng ào ào kim loại, xen tiếng "bộp" của giọt to |
+| `roof_light` | Mưa nhẹ trên mái tôn: lộp độp từng tiếng |
 
 ### Cách dùng
 
@@ -61,7 +138,10 @@ Tiếng mưa là nhiễu nên nén kém: FLAC khoảng 900 MB mỗi giờ. Nếu
 Chế độ video ghi âm thanh AAC 256 kbps (khoảng 115 MB mỗi giờ).
 
 Muốn chỉnh âm sắc, sửa bảng `PRESETS` trong `rain.py`. Ý nghĩa từng thông số được chú thích trong `RainParams`.
-Chạy test bằng `python -m unittest test_rain`.
+Mái tôn được mô phỏng như **một tấm kim loại mỏng dùng chung**. Mỗi giọt đập vào tấm tôn tại một
+vị trí khác nhau, làm rung cùng một tập cộng hưởng: giọt nhỏ kêu "tách", giọt to kêu "bộp".
+
+Chạy toàn bộ test bằng `python -m unittest test_rain test_rainmix`.
 
 ---
 
@@ -147,8 +227,8 @@ ffmpeg -i video_mua.mp4 -stream_loop -1 -i rain_bed.wav \
 
 ## Quy trình gợi ý
 
-1. **Lớp nền**: tiếng mưa đều, dài (tạo bằng `rain.py`, ffmpeg hoặc bản ghi CC0).
-2. **Lớp chi tiết**: chạy mô hình video-to-audio cho những đoạn có hành động rõ
-   (giọt rơi xuống vũng nước, mái tôn, sấm). Nếu kiếm tiền, dùng HunyuanVideo-Foley
-   hoặc Stable Audio Open.
-3. **Trộn** trong Audacity, rồi ghép vào video bằng ffmpeg.
+1. **Gom bản thu**: tự thu hoặc lấy bản CC0 / Pixabay, chép vào `library/` theo từng loại.
+   Có thể dùng Stable Audio Open hay HunyuanVideo-Foley để tạo thêm tiếng chi tiết
+   (giọt rơi xuống vũng nước, sấm) nếu thiếu.
+2. **Mix trong Rain Mixer Studio**: dựng công thức, nghe thử vài biến thể bằng 🎲, rồi lưu lại.
+3. **Xuất hàng loạt** hoặc ghép thẳng vào video. Mỗi video nhận một bản mix riêng.

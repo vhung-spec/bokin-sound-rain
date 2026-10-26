@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rain Mixer Studio</title>
+<style>
+  :root {
+    --bg: #0d1520; --panel: #142131; --panel-2: #1a2a3d; --line: #24384f; --text: #dfe8f2;
+    --muted: #8aa0b8; --accent: #5ab0ff; --accent-2: #2d7fd0; --warn: #f2b84b; --bad: #ff7a7a; --good: #6fd39b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+           padding: 10px 16px; background: #0b121bf2; border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+  header h1 { margin: 0 12px 0 0; font-size: 17px; font-weight: 650; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; padding: 16px; max-width: 1500px; margin: 0 auto; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  button, select, input { font: inherit; color: inherit; }
+  button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent-2); }
+  button.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; font-weight: 600; }
+  button.primary:hover { background: var(--accent); }
+  button.icon { padding: 4px 9px; }
+  button.active { background: var(--warn); border-color: var(--warn); color: #1b1300; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.dirty { box-shadow: 0 0 0 2px var(--warn) inset; }
+  select, input[type=text], input[type=number] { background: #0f1a27; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; min-width: 0; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+  .panel h2 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 650; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row > .grow { flex: 1 1 160px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  .card.off { opacity: .55; }
+  .card.silenced { opacity: .7; border-style: dashed; }
+  .card .head { margin-bottom: 8px; }
+  .card .name { flex: 1 1 180px; font-weight: 600; background: transparent; border-color: transparent; }
+  .card .name:focus { border-color: var(--line); background: #0f1a27; }
+  .badge { font-size: 11.5px; padding: 2px 8px; border-radius: 99px; background: #0f1a27; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .badge.events { color: var(--warn); border-color: #5b4a24; }
+  .badge.bed { color: var(--accent); border-color: #234b70; }
+  .sliders { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 18px; margin-top: 10px; }
+  .slider label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .slider label b { color: var(--text); font-weight: 600; }
+  .warn { color: var(--warn); font-size: 12.5px; margin-top: 8px; }
+  .err { color: var(--bad); }
+  .ok { color: var(--good); }
+  audio { width: 100%; margin-top: 10px; }
+  .status { min-height: 20px; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .folder { border-top: 1px solid var(--line); padding: 8px 0; }
+  .folder summary { cursor: pointer; display: flex; gap: 8px; align-items: center; }
+  .folder summary::-webkit-details-marker { display: none; }
+  .file { display: flex; gap: 8px; align-items: center; padding: 3px 0 3px 18px; font-size: 13px; }
+  .file .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .progress { height: 6px; background: #0f1a27; border-radius: 4px; overflow: hidden; margin: 6px 0; }
+  .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+  .job { border-top: 1px solid var(--line); padding: 8px 0; font-size: 13px; }
+  code, .path { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: var(--muted); word-break: break-all; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid2 > div > label, .stack > div > label { font-size: 12.5px; color: var(--muted); display: block; margin-bottom: 3px; }
+  .stack > div { margin-bottom: 8px; }
+  .help { font-size: 13px; color: var(--muted); }
+  .help li { margin: 3px 0; }
+  .toast { position: fixed; right: 16px; bottom: 16px; background: var(--panel-2); border: 1px solid var(--line); padding: 10px 14px; border-radius: 10px; max-width: 420px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌧️ Rain Mixer <span>Studio</span></h1>
+  <select id="recipeSelect" title="Mở công thức"></select>
+  <button id="newBtn">Mới</button>
+  <button id="saveBtn">Lưu</button>
+  <button id="saveAsBtn">Lưu thành…</button>
+  <span id="saveStatus" class="muted small"></span>
+</header>
+
+<main>
+  <section>
+    <div id="layers"></div>
+    <div class="row">
+      <button id="addLayerBtn">+ Thêm lớp</button>
+      <span class="muted small">Mẹo: bấm <b>S</b> để nghe riêng một lớp, bấm ▶ trên lớp để nghe bản thu gốc.</span>
+    </div>
+  </section>
+
+  <aside>
+    <div class="panel">
+      <h2>Nghe thử</h2>
+      <div class="row">
+        <label class="small muted">Seed</label>
+        <input id="seedInput" type="number" style="width: 120px">
+        <button id="variantBtn" title="Seed mới: chọn đoạn, nhịp, sự kiện khác">🎲 Bản khác</button>
+        <select id="lengthSelect" title="Độ dài bản nghe thử">
+          <option value="15">15 giây</option><option value="30" selected>30 giây</option>
+          <option value="60">1 phút</option><option value="120">2 phút</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top: 10px">
+        <button id="previewBtn" class="primary grow">▶ Trộn và nghe thử</button>
+      </div>
+      <label class="small muted" style="display: block; margin-top: 8px">
+        <input id="autoCheck" type="checkbox" checked> Tự trộn lại sau mỗi lần chỉnh
+      </label>
+      <audio id="player" controls loop></audio>
+      <div id="previewStatus" class="status"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Tổng</h2>
+      <div class="stack">
+        <div><label>Tên công thức</label><input id="recipeName" type="text" style="width: 100%"></div>
+        <div id="masterSliders"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Xuất bản hoàn chỉnh</h2>
+      <div class="grid2">
+        <div><label>Số bản</label><input id="countInput" type="number" min="1" max="500" value="5" style="width: 100%"></div>
+        <div><label>Độ dài mỗi bản</label><input id="durationInput" type="text" value="1h" style="width: 100%" title="Ví dụ: 30m, 1h, 1h30m, 3h"></div>
+        <div><label>Định dạng</label><select id="formatSelect" style="width: 100%"></select></div>
+        <div><label>Seed bắt đầu</label><input id="exportSeed" type="text" placeholder="ngẫu nhiên" style="width: 100%"></div>
+      </div>
+      <div class="row" style="margin-top: 10px"><button id="exportBtn" class="primary grow">Xuất file âm thanh</button></div>
+      <div class="stack" style="margin-top: 14px">
+        <div><label>Hoặc ghép thẳng vào video, mỗi video một bản riêng: thư mục chứa video</label>
+          <input id="videosInput" type="text" placeholder="ví dụ: D:\Videos\mua" style="width: 100%"></div>
+      </div>
+      <div class="row"><button id="videoBtn" class="grow">Ghép tiếng mưa vào video</button></div>
+      <p class="small muted">Lưu vào <span id="outdirPath" class="path"></span></p>
+      <div id="jobs"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Thư viện âm thanh</h2>
+      <div class="row small"><span id="libraryPath" class="path grow"></span><button id="rescanBtn" class="icon" title="Quét lại thư viện">⟳</button></div>
+      <div id="library"></div>
+    </div>
+  </aside>
+</main>
+<audio id="monitor"></audio>
+<div id="toast" class="toast"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const S = { state: null, recipe: null, file: "", solo: new Set(), dirty: false, rendering: false, again: false, timer: null, url: null, warnings: [] };
+
+// ---------- helpers
+async function api(path, options = {}) {
+  const init = { ...options };
+  if (init.body && typeof init.body !== "string") {
+    init.body = JSON.stringify(init.body);
+    init.headers = { "Content-Type": "application/json" };
+  }
+  const res = await fetch(path, init);
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).error || msg; } catch (e) {}
+    throw new Error(msg);
+  }
+  return res;
+}
+function toast(text, bad = false) {
+  const t = $("toast");
+  t.textContent = text; t.className = "toast" + (bad ? " err" : ""); t.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.style.display = "none"), 4500);
+}
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) node.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) if (c !== null && c !== undefined) node.append(c.nodeType ? c : document.createTextNode(c));
+  return node;
+}
+const randomSeed = () => Math.floor(Math.random() * 2147483647);
+const fmtTime = (s) => s == null ? "?" : s >= 3600 ? `${Math.floor(s / 3600)}h${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}` : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const isSynth = (src) => (src || "").startsWith("synth:");
+const synthInfo = (src) => S.state.synth.find((s) => s.id === src);
+function isEvents(layer) {
+  if (isSynth(layer.source)) return (synthInfo(layer.source) || {}).kind === "events";
+  return layer.type === "events";
+}
+function folderInfo(src) { return S.state.library.find((f) => f.name === src); }
+
+// ---------- slider scales
+function scale(spec) {
+  if (spec.log) {
+    const [lo, hi] = spec.log;
+    return {
+      toPos: (v) => (spec.off && v <= lo) ? 0 : Math.round(1000 * Math.log(Math.max(v, lo) / lo) / Math.log(hi / lo)),
+      toVal: (p) => (spec.off && p <= 0) ? 0 : lo * Math.pow(hi / lo, p / 1000),
+      min: 0, max: 1000, step: 1,
+    };
+  }
+  if (spec.pow) {
+    const [max, k] = spec.pow;
+    return { toPos: (v) => Math.round(1000 * Math.pow(Math.max(v, 0) / max, 1 / k)), toVal: (p) => max * Math.pow(p / 1000, k), min: 0, max: 1000, step: 1 };
+  }
+  return { toPos: (v) => v, toVal: (p) => Number(p), min: spec.min, max: spec.max, step: spec.step };
+}
+const signed = (v, unit) => `${v > 0 ? "+" : ""}${v.toFixed(1)} ${unit}`;
+const LAYER_SLIDERS = [
+  { key: "gain_db", label: "Âm lượng", min: -40, max: 12, step: 0.5, fmt: (v) => signed(v, "dB") },
+  { key: "highpass_hz", label: "Cắt trầm (lọc dưới)", log: [20, 1000], off: true, fmt: (v) => v <= 20 ? "tắt" : `${Math.round(v)} Hz` },
+  { key: "lowpass_hz", label: "Cắt chói (lọc trên)", log: [800, 20000], fmt: (v) => v >= 19500 ? "tắt" : `${(v / 1000).toFixed(1)} kHz` },
+  { key: "width", label: "Độ rộng stereo", min: 0, max: 2, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%` },
+  { key: "speed", label: "Tốc độ phát (cao/trầm)", min: 0.8, max: 1.25, step: 0.01, fmt: (v) => `${v.toFixed(2)}×`, when: (l) => !isSynth(l.source) },
+  { key: "swell_db", label: "To nhỏ dần", min: 0, max: 10, step: 0.5, fmt: (v) => v ? `±${v.toFixed(1)} dB` : "tắt", when: (l) => !isEvents(l) },
+  { key: "swell_seconds", label: "Nhịp to nhỏ", min: 5, max: 120, step: 1, fmt: (v) => `${Math.round(v)} giây`, when: (l) => !isEvents(l) && l.swell_db > 0 },
+  { key: "per_minute", label: "Tần suất", pow: [60, 3], fmt: (v) => v <= 0.01 ? "không bao giờ" : v < 1 ? `~1 lần / ${Math.round(60 / v)} giây` : `${v.toFixed(1)} lần / phút`, when: isEvents },
+  { key: "gain_spread_db", label: "Chênh to nhỏ giữa các lần", min: 0, max: 20, step: 0.5, fmt: (v) => `${v.toFixed(1)} dB`, when: isEvents },
+  { key: "pan_spread", label: "Trải trái – phải", min: 0, max: 1, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`, when: isEvents },
+  { key: "min_gap_seconds", label: "Cách nhau ít nhất", pow: [120, 2], fmt: (v) => `${v.toFixed(1)} giây`, when: isEvents },
+];
+const MASTER_SLIDERS = [
+  { key: "loudness", label: "Độ lớn tổng", min: -30, max: -10, step: 0.5, fmt: (v) => `${v.toFixed(1)} LUFS` },
+  { key: "variation", label: "Mức khác nhau giữa các bản", min: 0, max: 0.5, step: 0.01, fmt: (v) => v ? `±${Math.round((Math.exp(v) - 1) * 100)}%` : "giống hệt" },
+  { key: "fade", label: "Fade vào/ra", min: 0, max: 10, step: 0.5, fmt: (v) => `${v.toFixed(1)} giây` },
+];
+
+function slider(spec, obj, onChange) {
+  const sc = scale(spec);
+  const value = el("b", {}, spec.fmt(obj[spec.key]));
+  const input = el("input", { type: "range", min: sc.min, max: sc.max, step: sc.step });
+  input.value = sc.toPos(obj[spec.key]);
+  input.addEventListener("input", () => { obj[spec.key] = sc.toVal(Number(input.value)); value.textContent = spec.fmt(obj[spec.key]); });
+  input.addEventListener("change", () => onChange(spec.key));
+  input.addEventListener("dblclick", () => {
+    const d = (S.state.layer_defaults[spec.key] ?? S.state.recipe_defaults[spec.key]);
+    if (d === undefined) return;
+    obj[spec.key] = d; input.value = sc.toPos(d); value.textContent = spec.fmt(d); onChange(spec.key);
+  });
+  return el("div", { class: "slider", title: "Nhấp đúp để trả về mặc định" }, el("label", {}, spec.label, value), input);
+}
+
+// ---------- recipe and layers
+function newLayer(source) {
+  const layer = { ...S.state.layer_defaults };
+  if (source) {
+    layer.source = source;
+    const f = folderInfo(source), s = synthInfo(source);
+    layer.name = s ? s.label : source;
+    if (f) layer.type = f.suggested_type;
+    if (s) layer.type = s.kind;
+  }
+  return layer;
+}
+function changed(rerender = false) {
+  S.dirty = true;
+  $("saveBtn").classList.add("dirty");
+  if (rerender) renderLayers();
+  schedulePreview();
+}
+
+function sourceSelect(layer, onChange) {
+  const sel = el("select", { class: "grow", title: "Nguồn âm thanh" });
+  const lib = el("optgroup", { label: "Thư viện của bạn" });
+  for (const f of S.state.library) lib.append(el("option", { value: f.name }, `${f.name}  (${f.files.length} file)`));
+  if (!S.state.library.length) lib.append(el("option", { value: "", disabled: true }, "(chưa có file nào trong thư viện)"));
+  const beds = el("optgroup", { label: "Tiếng tổng hợp: nền" });
+  const evs = el("optgroup", { label: "Tiếng tổng hợp: âm rời rạc" });
+  for (const s of S.state.synth) (s.kind === "events" ? evs : beds).append(el("option", { value: s.id }, s.label));
+  sel.append(lib, beds, evs);
+  const known = S.state.library.some((f) => f.name === layer.source) || S.state.synth.some((s) => s.id === layer.source);
+  if (layer.source && !known) sel.prepend(el("option", { value: layer.source }, `⚠ ${layer.source} (không có trong thư viện)`));
+  if (!layer.source) sel.prepend(el("option", { value: "" }, "— chọn nguồn âm thanh —"));
+  sel.value = layer.source;
+  sel.addEventListener("change", () => onChange(sel.value));
+  return sel;
+}
+
+function renderLayers() {
+  const box = $("layers");
+  box.replaceChildren();
+  const anySolo = S.solo.size > 0;
+  S.recipe.layers.forEach((layer, i) => {
+    const events = isEvents(layer);
+    const card = el("div", { class: "card" + (layer.enabled ? "" : " off") + (anySolo && !S.solo.has(i) ? " silenced" : "") });
+    const enabled = el("input", { type: "checkbox", title: "Bật/tắt lớp" });
+    enabled.checked = layer.enabled;
+    enabled.addEventListener("change", () => { layer.enabled = enabled.checked; changed(true); });
+    const name = el("input", { type: "text", class: "name", value: layer.name });
+    name.addEventListener("change", () => { layer.name = name.value; changed(); });
+    const solo = el("button", { class: "icon" + (S.solo.has(i) ? " active" : ""), title: "Nghe riêng (solo)" }, "S");
+    solo.addEventListener("click", () => { S.solo.has(i) ? S.solo.delete(i) : S.solo.add(i); renderLayers(); schedulePreview(); });
+    const listen = el("button", { class: "icon", title: isSynth(layer.source) ? "Nghe riêng lớp này" : "Nghe một bản thu gốc ngẫu nhiên" }, "▶");
+    listen.addEventListener("click", () => auditionLayer(i));
+    const copy = el("button", { class: "icon", title: "Nhân đôi lớp" }, "⧉");
+    copy.addEventListener("click", () => { S.recipe.layers.splice(i + 1, 0, { ...layer, name: layer.name + " (2)" }); S.solo.clear(); changed(true); });
+    const remove = el("button", { class: "icon", title: "Xoá lớp" }, "✕");
+    remove.addEventListener("click", () => { S.recipe.layers.splice(i, 1); S.solo.clear(); changed(true); });
+
+    const src = sourceSelect(layer, (value) => {
+      const oldAuto = !layer.name || layer.name === "Lớp mới" || layer.name === layer.source || (synthInfo(layer.source) || {}).label === layer.name;
+      layer.source = value;
+      const f = folderInfo(value), s = synthInfo(value);
+      if (f) layer.type = f.suggested_type;
+      if (s) layer.type = s.kind;
+      if (oldAuto) layer.name = s ? s.label : value;
+      changed(true);
+    });
+    const type = el("select", { title: "Kiểu lớp", disabled: isSynth(layer.source) });
+    type.append(el("option", { value: "bed" }, "Nền liên tục"), el("option", { value: "events" }, "Âm rời rạc (sấm, giọt to…)"));
+    type.value = events ? "events" : "bed";
+    type.addEventListener("change", () => { layer.type = type.value; changed(true); });
+
+    const sliders = el("div", { class: "sliders" });
+    for (const spec of LAYER_SLIDERS) {
+      if (spec.when && !spec.when(layer)) continue;
+      sliders.append(slider(spec, layer, (key) => changed(key === "swell_db")));
+    }
+    const warn = S.warnings.filter((w) => w.includes(`'${layer.name}'`));
+    card.append(
+      el("div", { class: "row head" }, enabled, name, el("span", { class: "badge " + (events ? "events" : "bed") }, events ? "rời rạc" : "nền"), solo, listen, copy, remove),
+      el("div", { class: "row" }, src, type),
+      sliders,
+    );
+    if (warn.length) card.append(el("div", { class: "warn" }, "⚠ " + warn.join(" · ")));
+    box.append(card);
+  });
+  if (!S.recipe.layers.length) box.append(el("div", { class: "card muted" }, "Chưa có lớp nào. Bấm “+ Thêm lớp” hoặc chọn một thư mục trong thư viện bên phải."));
+}
+
+function renderMaster() {
+  $("recipeName").value = S.recipe.name;
+  const box = $("masterSliders");
+  box.replaceChildren(...MASTER_SLIDERS.map((spec) => el("div", {}, slider(spec, S.recipe, () => changed()))));
+}
+
+function renderRecipeSelect() {
+  const sel = $("recipeSelect");
+  sel.replaceChildren(el("option", { value: "" }, S.file ? "— công thức —" : "(công thức chưa lưu)"));
+  for (const r of S.state.recipes) sel.append(el("option", { value: r }, r));
+  sel.value = S.file || "";
+}
+
+function renderLibrary() {
+  $("libraryPath").textContent = S.state.library_dir;
+  $("outdirPath").textContent = S.state.outdir;
+  const box = $("library");
+  box.replaceChildren();
+  if (!S.state.library.length) {
+    box.append(el("div", { class: "help" },
+      el("p", {}, "Chưa có bản thu nào. Tạo các thư mục con trong thư mục trên rồi chép file âm thanh vào (wav, flac, mp3, ogg, m4a), ví dụ:"),
+      el("ul", {}, el("li", {}, el("code", {}, "mai_ton/"), " mưa trên mái tôn (file dài)"), el("li", {}, el("code", {}, "mua_nen/"), " mưa rơi đều"),
+        el("li", {}, el("code", {}, "giot_nuoc/"), " giọt nước rơi lẻ (file ngắn)"), el("li", {}, el("code", {}, "sam/"), " tiếng sấm (mỗi file một tiếng)")),
+      el("p", {}, "Rồi bấm ⟳. Trong lúc chờ, bạn vẫn mix được bằng tiếng tổng hợp.")));
+    return;
+  }
+  for (const f of S.state.library) {
+    const add = el("button", { class: "icon small", title: "Thêm thư mục này thành một lớp" }, "+ lớp");
+    add.addEventListener("click", (e) => { e.preventDefault(); S.recipe.layers.push(newLayer(f.name)); changed(true); toast(`Đã thêm lớp “${f.name}”`); });
+    const files = f.files.map((file) => {
+      const play = el("button", { class: "icon", title: "Nghe file gốc" }, "▶");
+      play.addEventListener("click", () => playFile(file.path));
+      return el("div", { class: "file" }, play, el("span", { class: "fname", title: file.path }, file.name), el("span", { class: "muted small" }, fmtTime(file.duration)));
+    });
+    box.append(el("details", { class: "folder" },
+      el("summary", {}, el("span", { class: "grow" }, "📁 ", el("b", {}, f.name), el("span", { class: "muted small" }, `  ${f.files.length} file · gợi ý: ${f.suggested_type === "events" ? "âm rời rạc" : "nền"}`)), add),
+      ...files));
+  }
+}
+
+// ---------- audio
+function playFile(path) {
+  const m = $("monitor");
+  $("player").pause();
+  m.src = "/api/file?path=" + encodeURIComponent(path);
+  m.play().catch((e) => toast("Trình duyệt không phát được file này: " + e.message, true));
+}
+function auditionLayer(i) {
+  const layer = S.recipe.layers[i];
+  const f = folderInfo(layer.source);
+  if (f && f.files.length) return playFile(f.files[Math.floor(Math.random() * f.files.length)].path);
+  S.solo = new Set([i]);
+  renderLayers();
+  preview();
+}
+function previewRecipe() {
+  const r = JSON.parse(JSON.stringify(S.recipe));
+  if (S.solo.size) r.layers.forEach((l, i) => { l.enabled = l.enabled && S.solo.has(i); });
+  return r;
+}
+function schedulePreview() {
+  if (!$("autoCheck").checked) return;
+  clearTimeout(S.timer);
+  S.timer = setTimeout(preview, 600);
+}
+async function preview() {
+  if (S.rendering) { S.again = true; return; }
+  S.rendering = true; S.again = false;
+  const seconds = Number($("lengthSelect").value);
+  const seed = Number($("seedInput").value) || 0;
+  $("previewBtn").disabled = true;
+  $("previewStatus").innerHTML = '<span class="spinner"></span>Đang trộn…';
+  try {
+    const res = await api("/api/preview", { method: "POST", body: { recipe: previewRecipe(), seed, seconds } });
+    const info = JSON.parse(res.headers.get("X-Mix-Info") || "{}");
+    const blob = await res.blob();
+    const player = $("player");
+    const wasPlaying = !player.paused || !S.url;
+    const at = player.currentTime || 0;
+    if (S.url) URL.revokeObjectURL(S.url);
+    S.url = URL.createObjectURL(blob);
+    player.src = S.url;
+    player.addEventListener("loadedmetadata", () => {
+      player.currentTime = Math.min(at, Math.max(0, player.duration - 0.5));
+      if (wasPlaying) player.play().catch(() => {});
+    }, { once: true });
+    $("monitor").pause();
+    S.warnings = info.warnings || [];
+    const solo = S.solo.size ? " · đang nghe riêng " + S.solo.size + " lớp" : "";
+    $("previewStatus").innerHTML = "";
+    $("previewStatus").append(`Đã trộn ${seconds} giây trong ${info.render_seconds}s · seed ${seed}${solo}`);
+    if (S.warnings.length) $("previewStatus").append(el("div", { class: "warn" }, "⚠ " + S.warnings.join(" · ")));
+    renderLayers();
+  } catch (e) {
+    $("previewStatus").replaceChildren(el("span", { class: "err" }, "Lỗi: " + e.message));
+  } finally {
+    S.rendering = false;
+    $("previewBtn").disabled = false;
+    if (S.again) preview();
+  }
+}
+
+// ---------- recipes
+async function loadRecipe(name) {
+  const res = await api("/api/recipe?name=" + encodeURIComponent(name));
+  S.recipe = await res.json();
+  S.file = name; S.solo.clear(); S.dirty = false; S.warnings = [];
+  $("saveBtn").classList.remove("dirty");
+  renderAll();
+  schedulePreview();
+}
+async function saveRecipe(asNew) {
+  let name = S.file;
+  if (asNew || !name) {
+    name = prompt("Tên file công thức:", S.recipe.name);
+    if (!name) return;
+  }
+  const res = await api("/api/recipe", { method: "POST", body: { name, recipe: S.recipe } });
+  const out = await res.json();
+  S.file = out.name; S.dirty = false;
+  $("saveBtn").classList.remove("dirty");
+  await refreshState();
+  $("saveStatus").textContent = `Đã lưu recipes/${out.name}.json`;
+  setTimeout(() => ($("saveStatus").textContent = ""), 4000);
+}
+async function refreshState() {
+  S.state = await (await api("/api/state")).json();
+  renderRecipeSelect();
+  renderLibrary();
+}
+function renderAll() {
+  renderRecipeSelect(); renderMaster(); renderLayers(); renderLibrary();
+  $("formatSelect").replaceChildren(...S.state.formats.map((f) => el("option", { value: f }, f)));
+  $("formatSelect").value = "flac";
+}
+
+// ---------- export
+async function startExport(videos) {
+  const body = { recipe: S.recipe, count: Number($("countInput").value), duration: $("durationInput").value,
+                 format: $("formatSelect").value, seed: $("exportSeed").value };
+  if (videos) {
+    body.videos = $("videosInput").value.trim();
+    if (!body.videos) return toast("Nhập đường dẫn thư mục chứa video trước đã", true);
+  }
+  try {
+    await api("/api/export", { method: "POST", body });
+    toast(videos ? "Bắt đầu ghép tiếng mưa vào video" : "Bắt đầu xuất file");
+    pollJobs();
+  } catch (e) { toast("Lỗi: " + e.message, true); }
+}
+async function pollJobs() {
+  clearTimeout(pollJobs.timer);
+  const { jobs } = await (await api("/api/jobs")).json();
+  const box = $("jobs");
+  box.replaceChildren(...jobs.map((j) => {
+    const pct = j.total ? ((j.done + (j.status === "running" ? j.progress : 0)) / j.total) * 100 : 100;
+    const state = { queued: "đang chờ", running: "đang xuất", done: "xong", error: "lỗi" }[j.status];
+    return el("div", { class: "job" },
+      el("div", { class: "row" }, el("b", { class: "grow" }, j.recipe), el("span", { class: j.status === "done" ? "ok" : j.status === "error" ? "err" : "muted" }, `${state} · ${j.done}/${j.total}`)),
+      el("div", { class: "progress" }, el("div", { style: `width:${pct.toFixed(1)}%` })),
+      j.current ? el("div", { class: "small muted" }, "→ " + j.current) : null,
+      j.files.length ? el("div", { class: "small" }, "Đã xong: " + j.files.join(", ")) : null,
+      j.skipped.length ? el("div", { class: "small muted" }, "Bỏ qua vì đã có: " + j.skipped.join(", ")) : null,
+      j.warnings && j.warnings.length ? el("div", { class: "warn" }, "⚠ " + j.warnings.join(" · ")) : null,
+      j.errors.length ? el("div", { class: "small err" }, j.errors.join(" · ")) : null);
+  }));
+  if (jobs.some((j) => j.status === "running" || j.status === "queued")) pollJobs.timer = setTimeout(pollJobs, 1000);
+}
+
+// ---------- wiring
+async function init() {
+  S.state = await (await api("/api/state")).json();
+  $("seedInput").value = randomSeed();
+  const first = S.state.recipes.includes("mai_ton_dem") ? "mai_ton_dem" : S.state.recipes[0];
+  if (first) await loadRecipe(first);
+  else { S.recipe = { ...S.state.recipe_defaults, layers: [newLayer("synth:medium")] }; renderAll(); }
+  pollJobs();
+}
+$("recipeSelect").addEventListener("change", (e) => {
+  const name = e.target.value;
+  if (!name) return;
+  if (S.dirty && !confirm("Công thức hiện tại chưa lưu. Vẫn mở công thức khác?")) { e.target.value = S.file; return; }
+  loadRecipe(name).catch((err) => toast(err.message, true));
+});
+$("newBtn").addEventListener("click", () => {
+  if (S.dirty && !confirm("Công thức hiện tại chưa lưu. Vẫn tạo mới?")) return;
+  S.recipe = { ...S.state.recipe_defaults, layers: [newLayer("synth:medium")] };
+  S.file = ""; S.solo.clear(); S.warnings = [];
+  renderAll(); changed();
+});
+$("saveBtn").addEventListener("click", () => saveRecipe(false).catch((e) => toast(e.message, true)));
+$("saveAsBtn").addEventListener("click", () => saveRecipe(true).catch((e) => toast(e.message, true)));
+$("addLayerBtn").addEventListener("click", () => { S.recipe.layers.push(newLayer("")); renderLayers(); });
+$("recipeName").addEventListener("change", (e) => { S.recipe.name = e.target.value; changed(); });
+$("previewBtn").addEventListener("click", preview);
+$("variantBtn").addEventListener("click", () => { $("seedInput").value = randomSeed(); preview(); });
+$("seedInput").addEventListener("change", schedulePreview);
+$("lengthSelect").addEventListener("change", schedulePreview);
+$("exportBtn").addEventListener("click", () => startExport(false));
+$("videoBtn").addEventListener("click", () => startExport(true));
+$("rescanBtn").addEventListener("click", () => refreshState().then(() => { renderLayers(); toast("Đã quét lại thư viện"); }));
+window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
+init().catch((e) => toast("Không tải được Studio: " + e.message, true));
+</script>
+</body>
+</html>

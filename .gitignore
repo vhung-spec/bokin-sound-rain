@@ -1,3 +1,6 @@
 __pycache__/
 output/
 *.part.*
+library/*
+!library/README.md
+.rainmix-cache.json

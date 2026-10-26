@@ -1,0 +1,12 @@
+{
+  "name": "Mưa rào có sấm",
+  "loudness": -17,
+  "variation": 0.15,
+  "fade": 3,
+  "layers": [
+    {"name": "Mưa nền (bản thu)", "type": "bed", "source": "mua_nen", "gain_db": 0, "highpass_hz": 40, "swell_db": 4, "swell_seconds": 25},
+    {"name": "Mưa lớn (tổng hợp)", "type": "bed", "source": "synth:heavy", "gain_db": -3, "swell_db": 0},
+    {"name": "Sấm (bản thu)", "type": "events", "source": "sam", "gain_db": -2, "per_minute": 0.6, "gain_spread_db": 8, "pan_spread": 0.6, "min_gap_seconds": 40},
+    {"name": "Sấm (tổng hợp)", "type": "events", "source": "synth:thunder", "gain_db": -4, "per_minute": 0.4, "gain_spread_db": 8, "pan_spread": 0.6, "min_gap_seconds": 40}
+  ]
+}
