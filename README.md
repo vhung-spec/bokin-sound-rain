@@ -1,7 +1,71 @@
 # bokin-sound-rain
 
-Tổng hợp công cụ và dự án mã nguồn mở để tạo tiếng mưa cho video mưa
-(tra cứu tháng 10/2026; giấy phép có thể thay đổi, hãy đọc lại file LICENSE trước khi dùng).
+Công cụ tạo tiếng mưa hàng loạt cho video mưa, kèm tổng hợp các công cụ và dự án mã nguồn mở liên quan.
+
+## Tạo tiếng mưa hàng loạt bằng `rain.py`
+
+`rain.py` tổng hợp tiếng mưa bằng thuật toán, không dùng file thu âm hay mô hình AI,
+nên âm thanh hoàn toàn thuộc về bạn. Mỗi bản dùng một **seed** riêng: vị trí từng giọt mưa,
+nhịp mưa to nhỏ và tiếng sấm đều khác nhau. Các thông số như độ dày hạt, độ trầm, độ rộng
+stereo cũng lệch nhẹ (mặc định khoảng ±16%) so với kiểu mưa gốc. Nhờ vậy các video
+nghe cùng một phong cách nhưng không bản nào giống bản nào.
+
+### Cài đặt
+
+- Python 3.9 trở lên, rồi chạy `pip install -r requirements.txt` (chỉ cần numpy)
+- [ffmpeg](https://ffmpeg.org/download.html) (có cả `ffprobe`)
+
+### Kiểu mưa (preset)
+
+| Tên | Mô tả |
+|---|---|
+| `light` | Mưa nhẹ, lất phất |
+| `medium` | Mưa vừa, đều hạt (mặc định) |
+| `heavy` | Mưa lớn, nặng hạt |
+| `storm` | Mưa giông có sấm (khoảng 1 tiếng sấm mỗi 1–2 phút) |
+| `roof` | Mưa trên mái tôn |
+
+### Cách dùng
+
+```bash
+# Nghe thử một kiểu mưa trong 30 giây
+python rain.py render -p roof -d 30s -o thu_roof.flac
+
+# Tạo 50 file, mỗi file 1 giờ, mỗi file chọn ngẫu nhiên 1 trong 3 kiểu mưa, chạy song song 4 file
+python rain.py batch -p light,medium,heavy -n 50 -d 1h --outdir output -j 4
+
+# Ghép tiếng mưa riêng cho mọi video trong thư mục videos/
+python rain.py video videos/ --outdir output -p medium,heavy -j 2
+```
+
+- Chế độ `video` **thay** tiếng gốc bằng tiếng mưa dài đúng bằng video. Hình được giữ nguyên,
+  không nén lại nên chạy nhanh. File ra có tên `<tên video>_rain.mp4`.
+- Mỗi lần chạy, `manifest.csv` trong thư mục đầu ra được ghi thêm seed, kiểu mưa và toàn bộ thông số của từng file.
+  Muốn tạo lại đúng một bản, dùng lại cùng `-p`, `-s` (seed) và `-v`.
+- Chạy lại cùng lệnh thì file đã có sẽ được bỏ qua, nên có thể dừng giữa chừng rồi chạy tiếp.
+  Thêm `--overwrite` để ghi đè.
+
+| Tuỳ chọn | Ý nghĩa |
+|---|---|
+| `-p, --preset` | một kiểu, nhiều kiểu cách nhau dấu phẩy, hoặc `all` |
+| `-v, --variation` | mức khác nhau giữa các bản: `0` = giống hệt preset, `0.15` = mặc định, `0.3` = khác nhiều |
+| `-s, --seed` | seed bắt đầu; file thứ i dùng seed + i (mặc định: ngẫu nhiên) |
+| `-d, --duration` | độ dài: `90s`, `10m`, `1h30m`, `01:30:00` |
+| `--loudness` | độ lớn trung bình theo LUFS, mặc định `-18` (YouTube chỉ giảm âm lượng video to hơn −14) |
+| `--fade` | fade vào/ra, mặc định 3 giây |
+| `--format` | (batch) `flac` mặc định, hoặc `wav`, `mp3`, `m4a`, `ogg`, `opus` |
+| `-j, --jobs` | số file/video xử lý song song |
+
+Tốc độ đo trên máy thử, mỗi file chạy trên 1 nhân CPU: 1 giờ âm thanh mất khoảng 50 giây.
+Tiếng mưa là nhiễu nên nén kém: FLAC khoảng 900 MB mỗi giờ. Nếu cần file nhẹ, dùng `--format mp3` hoặc `m4a`.
+Chế độ video ghi âm thanh AAC 256 kbps (khoảng 115 MB mỗi giờ).
+
+Muốn chỉnh âm sắc, sửa bảng `PRESETS` trong `rain.py`. Ý nghĩa từng thông số được chú thích trong `RainParams`.
+Chạy test bằng `python -m unittest test_rain`.
+
+---
+
+*Phần dưới là tra cứu công cụ, thực hiện tháng 10/2026. Giấy phép có thể thay đổi, hãy đọc lại file LICENSE trước khi dùng.*
 
 ## Lưu ý về giấy phép khi đăng YouTube có kiếm tiền
 
@@ -83,7 +147,7 @@ ffmpeg -i video_mua.mp4 -stream_loop -1 -i rain_bed.wav \
 
 ## Quy trình gợi ý
 
-1. **Lớp nền**: tiếng mưa đều, dài (tự tạo bằng ffmpeg hoặc bản ghi CC0).
+1. **Lớp nền**: tiếng mưa đều, dài (tạo bằng `rain.py`, ffmpeg hoặc bản ghi CC0).
 2. **Lớp chi tiết**: chạy mô hình video-to-audio cho những đoạn có hành động rõ
    (giọt rơi xuống vũng nước, mái tôn, sấm). Nếu kiếm tiền, dùng HunyuanVideo-Foley
    hoặc Stable Audio Open.
