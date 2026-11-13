@@ -37,27 +37,28 @@ CALIBRATION_SECONDS = 60.0  # longer than rain.py: sparse crackles, whistles and
 
 @dataclass(frozen=True)
 class FireParams:
-    # roar: tiếng gầm trầm
-    roar_level: float = 0.5
-    roar_high_hz: float = 220.0
-    # lap: lửa liếm phập phù
-    lap_level: float = 0.25
-    lap_low_hz: float = 180.0
-    lap_high_hz: float = 1800.0
-    lap_flicker_hz: float = 6.0  # tốc độ nhấp nháy của ngọn lửa
-    lap_depth: float = 0.6  # 0 = đều, 1 = phập phù mạnh
+    # roar: tiếng gầm trầm (chỉ để tạo độ ấm; to quá sẽ nghe như gió/bão)
+    roar_level: float = 0.12
+    roar_high_hz: float = 160.0
+    # lap: lửa liếm phành phạch (Farnell: nhiễu quanh 30 Hz bị cắt đỉnh -> nhịp đập nhiều hài)
+    lap_level: float = 0.2
+    lap_hz: float = 30.0  # tần số trung tâm của nhịp phành phạch
+    lap_drive: float = 4.0  # độ cắt đỉnh: lớn hơn = vuông hơn, "phạch" rõ hơn
+    lap_high_hz: float = 3500.0
     # crackle: tiếng nổ lách tách
-    crackle_rate: float = 4.0  # số "tiếng nổ gốc" mỗi giây (chưa tính tiếng con trong chùm)
+    crackle_rate: float = 7.0  # số "tiếng nổ gốc" mỗi giây (chưa tính tiếng con trong chùm)
     crackle_branch: float = 0.55  # mỗi tiếng nổ sinh trung bình bấy nhiêu tiếng con (<1)
     crackle_cluster_ms: float = 45.0  # khoảng cách trung bình giữa các tiếng trong một chùm
     crackle_alpha: float = 1.6  # số mũ Pareto của biên độ: nhỏ hơn = nhiều tiếng "đốp" to hơn
-    crackle_level: float = 0.6  # độ lớn tiếng nổ điển hình (tương đối so với nền)
+    crackle_level: float = 1.0  # độ lớn tiếng nổ điển hình
     crackle_low_hz: float = 1200.0
     crackle_high_hz: float = 9000.0
     pop_share: float = 0.15  # tỉ lệ tiếng nổ to có "thân" trầm
-    # hiss + whistle
-    hiss_level: float = 0.12
-    hiss_sparsity: float = 0.6  # 0 = xì đều, lớn hơn = từng cơn
+    # fizz: tiếng "rì rì" của vô số tiếng nổ li ti (thay cho tiếng xì mịn kiểu gió)
+    fizz_level: float = 0.08
+    fizz_rate: float = 150.0  # số tiếng li ti mỗi giây
+    # hiss: tiếng xì bùng lên từng cơn (Farnell: điều biên mũ 4)
+    hiss_level: float = 0.04
     whistle_per_min: float = 0.6
     whistle_level: float = 0.08
     # collapse: củi sụp
@@ -72,18 +73,18 @@ class FireParams:
 
 
 PRESETS: dict[str, tuple[str, FireParams]] = {
-    "campfire": ("Lửa trại ngoài trời: gầm ấm, lách tách vừa, thỉnh thoảng củi sụp", FireParams()),
-    "fireplace": ("Lò sưởi trong phòng: êm hơn, có tiếng vang phòng, ít gầm", FireParams(
-        roar_level=0.35, roar_high_hz=180, lap_level=0.25, lap_flicker_hz=4.5, crackle_rate=3.0,
-        crackle_level=0.5, crackle_high_hz=7500, hiss_level=0.08, whistle_per_min=0.4,
-        collapse_per_min=0.15, width=0.6, room=0.6, room_rt60=0.5)),
+    "campfire": ("Lửa trại ngoài trời: lách tách vừa, phành phạch nhẹ, thỉnh thoảng củi sụp", FireParams()),
+    "fireplace": ("Lò sưởi trong phòng: êm hơn, có tiếng vang phòng", FireParams(
+        roar_level=0.08, lap_level=0.15, lap_drive=3.0, crackle_rate=5.0, crackle_level=0.9,
+        crackle_high_hz=7500, fizz_level=0.06, fizz_rate=100, hiss_level=0.03, whistle_per_min=0.4,
+        collapse_per_min=0.15, width=0.6, room=0.5, room_rt60=0.5)),
     "crackling": ("Củi khô cháy lách tách dày (kiểu ASMR)", FireParams(
-        roar_level=0.25, lap_level=0.2, crackle_rate=9.0, crackle_branch=0.65, crackle_alpha=1.4,
-        crackle_level=0.75, pop_share=0.2, hiss_level=0.06, collapse_per_min=0.2)),
-    "embers": ("Than hồng sắp tàn: rất êm, tí tách thưa, nhiều tiếng xì", FireParams(
-        roar_level=0.25, roar_high_hz=150, lap_level=0.08, lap_depth=0.5, crackle_rate=1.2,
-        crackle_branch=0.4, crackle_alpha=2.2, crackle_level=0.35, pop_share=0.05, hiss_level=0.08,
-        hiss_sparsity=1.2, whistle_per_min=1.2, whistle_level=0.06, collapse_per_min=0.08,
+        roar_level=0.05, lap_level=0.1, crackle_rate=12.0, crackle_branch=0.65, crackle_alpha=1.4,
+        pop_share=0.2, fizz_level=0.12, fizz_rate=300, hiss_level=0.03, collapse_per_min=0.2)),
+    "embers": ("Than hồng sắp tàn: rất êm, tí tách thưa, rì rì và thỉnh thoảng xì", FireParams(
+        roar_level=0.06, lap_level=0.04, lap_drive=2.0, crackle_rate=1.5, crackle_branch=0.4,
+        crackle_alpha=2.2, crackle_level=0.9, pop_share=0.05, fizz_level=0.05, fizz_rate=60,
+        hiss_level=0.025, whistle_per_min=1.2, whistle_level=0.06, collapse_per_min=0.08,
         collapse_level=0.5, intensity_db=2.0)),
 }
 
@@ -97,7 +98,7 @@ def vary(p: FireParams, variation: float, rng) -> FireParams:
     out = {}
     for name, x in zip(names, u):
         v = getattr(p, name)
-        if name in ("room", "width", "lap_depth"):
+        if name in ("room", "width"):
             out[name] = float(np.clip(v + 0.5 * variation * x, 0.0, 1.0)) if v > 0 else v
         elif name == "crackle_branch":
             out[name] = float(np.clip(v * math.exp(0.5 * variation * x), 0.0, 0.85))
@@ -246,13 +247,16 @@ def room_ir(rng, rt60, sr=SR):
 
 class FireSynth:
     def __init__(self, p: FireParams, seed: int):
-        r = [np.random.default_rng([seed, 1000 + i]) for i in range(10)]
+        r = [np.random.default_rng([seed, 1000 + i]) for i in range(12)]
         self.p, self.r = p, r
         self.roar = rain.ShapedNoise(r[0], SR, lambda f: rain.band(f, 25.0, p.roar_high_hz, 0.6, 2, 3))
-        self.lap = rain.ShapedNoise(r[1], SR, lambda f: rain.band(f, p.lap_low_hz, p.lap_high_hz, 0.5))
-        self.hiss = rain.ShapedNoise(r[2], SR, lambda f: rain.band(f, 2000.0, 9000.0, 0.2, 2, 4))
-        self.flicker = [Control(r[3], 1.0 / (2 * math.pi * p.lap_flicker_hz)) for _ in range(2)]
-        self.hiss_env = Control(r[4], 0.6)
+        # Farnell's lapping: narrow noise around ~30 Hz, driven into a hard clip, then band-limited.
+        self.lap = rain.ShapedNoise(r[1], SR, lambda f: rain._resonance(f, p.lap_hz, 5.0))
+        self.lap_eq = rainmix.FirEq(80.0, p.lap_high_hz, SR)
+        self.hiss = rain.ShapedNoise(r[2], SR, lambda f: rain.band(f, 1000.0, 9000.0, 0.0, 2, 4))
+        self.hiss_env = Control(r[4], 1.0 / (2 * math.pi))  # ~1 Hz low-passed noise, raised to the 4th power
+        self.fizz = rain.ShapedNoise(r[3], SR, lambda f: rain.band(f, 2500.0, 12000.0, 0.0, 2, 4),
+                                     texture=1.0, texture_rate=p.fizz_rate)
         self.intensity = rain.Swell(r[5], SR, p.intensity_db, p.intensity_seconds)
         self.events = Overlay()
         self.crng = r[6]
@@ -268,6 +272,7 @@ class FireSynth:
             irs = np.zeros((2, 2, ir.shape[1]), np.float32)
             irs[0, 0], irs[1, 1] = ir[0], ir[1]
             self.conv = rain.Convolver(irs, CHUNK)
+        self.parts: dict[str, np.ndarray] = {}  # last block of each layer, for analysis
 
     # crackles ------------------------------------------------------
     def _crackles(self, n, rate_gain):
@@ -291,7 +296,7 @@ class FireSynth:
                 t += int(rng.exponential(p.crackle_cluster_ms / 1000) * SR) + int(0.0015 * SR)
                 times.append(t)
                 amps.append(min(rng.random() ** (-1.0 / p.crackle_alpha), 8.0) * rng.uniform(0.3, 0.9))
-        base = p.crackle_level * 2.0  # bed RMS is ~0.5-0.7 before calibration: small ticks ~6 dB over it
+        base = p.crackle_level * 1.0
         for t, a in zip(times, amps):
             big = a > 2.5 and rng.random() < min(1.0, p.pop_share * 4)
             bank = self.bank_big if big else self.bank_small
@@ -326,21 +331,20 @@ class FireSynth:
         self.boost = float(boost[-1] * math.exp(-1 / SR / self.boost_tau)) if n else self.boost
         inten = self.intensity.read(n) * (1 + 0.15 * boost)
         roar = rain.widen(self.roar.read(n), p.width * 0.5) * (p.roar_level * np.sqrt(inten))
-        fl = np.stack([c.read(n) for c in self.flicker])
-        # rectified flicker: flames "puff" rather than wobble symmetrically
-        env = np.maximum(0.0, 0.4 + fl) ** 2
-        env = (1 - p.lap_depth) + p.lap_depth * env / 0.8
-        lap = rain.widen(self.lap.read(n), p.width) * env * (p.lap_level * inten)
-        h = np.exp(p.hiss_sparsity * self.hiss_env.read(n) - p.hiss_sparsity ** 2 / 2)
+        lap = self.lap_eq(np.clip(self.lap.read(n) * p.lap_drive, -1.0, 1.0)) * (p.lap_level * inten)
+        lap = rain.widen(lap, p.width)
+        h = self.hiss_env.read(n) ** 4 / math.sqrt(105.0)  # unit mean power (E[x^8] = 105): rare surges
         hiss = rain.widen(self.hiss.read(n), p.width) * (p.hiss_level * h)
+        fizz = rain.widen(self.fizz.read(n), p.width) * (p.fizz_level * inten)
         self._rare(n)
         self._crackles(n, inten ** 2 * (1 + boost))
-        y = (roar + lap + hiss).astype(np.float32) + self.events.read(n)
+        events = self.events.read(n)
+        self.parts = {"roar": roar, "lap": lap, "hiss": hiss, "fizz": fizz, "events": events}
+        y = (roar + lap + hiss + fizz).astype(np.float32) + events
         self.pos += n
         if self.conv is not None:
             y = y + self.conv.process(y) * np.float32(p.room * 0.5)
         return y.astype(np.float32)
-
 
 
 def synth_chunks(p: FireParams, seed: int, total: int, loudness=LAYER_REFERENCE):
@@ -420,7 +424,12 @@ def fire_chunks(p, seed, total, loudness=-20.0, real=None, real_db=-6.0, variati
         count += c.shape[1]
         if count >= min(total, CALIBRATION_SECONDS * SR):
             break
-    gain = np.float32(10 ** ((loudness - rain.loudness_lufs(np.concatenate(first, axis=1), SR)) / 20))
+    block = np.concatenate(first, axis=1)
+    gain = 10 ** ((loudness - rain.loudness_lufs(block, SR)) / 20)
+    for _ in range(2):  # the limiter below removes some loudness from the biggest crackles: measure after it
+        limited = np.concatenate(list(limit(iter([block * np.float32(gain)]), block.shape[1])), axis=1)
+        gain *= 10 ** ((loudness - rain.loudness_lufs(limited, SR)) / 20)
+    gain = np.float32(gain)
     # The loudest crackles are turned down smoothly (not clipped, which would add harsh
     # overtones and overshoot between samples), so lossy encoders such as AAC keep headroom.
     yield from limit((c * gain for c in itertools.chain(first, stream)), total)

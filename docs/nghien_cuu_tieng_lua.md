@@ -440,3 +440,48 @@ Các test có sẵn của `rain.py` và `rainmix.py` vẫn qua hết.
 **Chưa kiểm chứng:** môi trường này không tải được bản thu lửa thật nào, vì Freesound bị chặn.
 Phần trộn chỉ mới thử với nhiễu giả lập, nên cần bạn thử với bản thu thật và nghe xem mức `--real-db` nào hợp.
 Mẫu nghe thử tiếng tổng hợp (không có bản thu): `samples/fire_*.mp3`.
+
+## 10. Sửa lỗi "nghe giống tiếng gió" (theo nhận xét khi nghe)
+
+Người nghe nhận xét bản đầu của `fire.py` **giống tiếng gió hơn tiếng lửa**. Số đo khớp với nhận xét đó:
+- 64–72% năng lượng nằm dưới 300 Hz, là một tiếng ù-ào liên tục;
+- lớp "lửa liếm" là nhiễu dải 180–1800 Hz dâng hạ chậm;
+- tiếng xì là nhiễu dải cao dâng hạ chậm;
+- hai lớp này được tạo đúng theo công thức của tiếng gió;
+- tiếng nổ quá thưa và quá nhỏ.
+
+Thước đo mới `prototypes/windiness.py` đo ba chỉ số:
+- độ nhọn của dải 2–10 kHz;
+- tỉ lệ dao động chậm (0,1–2 Hz) so với nhanh (4–40 Hz) của đường bao;
+- tỉ lệ năng lượng trầm.
+
+Mốc so sánh là preset `wind` của `rain.py`, có tỉ lệ chậm/nhanh **+6,2 dB**.
+
+Các thay đổi:
+1. **Lửa liếm theo đúng Farnell**: lọc nhiễu quanh 30 Hz (Q 5), khuếch đại rồi **cắt đỉnh cứng**, sau đó lọc 80–3500 Hz.
+   Kết quả là nhịp phành phạch nhiều hài, thay cho tiếng ù dâng hạ.
+2. **Tiếng xì theo Farnell**: điều biên bằng (nhiễu lọc ~1 Hz)⁴, nên phần lớn thời gian im và chỉ thỉnh thoảng bùng lên.
+   Chuẩn hoá theo công suất (E[x⁸] = 105) để các cơn xì không quá to.
+3. **Lớp mới "rì rì" (fizz)**: 60–300 tiếng tách li ti mỗi giây ở 2,5–12 kHz. Lớp này thay cho tiếng xì mịn.
+4. **Tiếng gầm giảm mạnh** (0,5 → 0,12), chỉ còn để tạo độ ấm.
+5. **Tiếng nổ dày hơn và to hơn**: lửa trại 7 tiếng gốc mỗi giây, củi lách tách 12.
+6. Độ lớn được cân **sau** limiter, vì giờ tiếng nổ là phần chính.
+
+Độ lớn từng lớp so với tổng (dB, seed 1, 2 phút):
+
+| Preset | gầm | liếm | xì | rì rì | tiếng nổ + sự kiện | chậm/nhanh dB | % dưới 300 Hz |
+|---|---|---|---|---|---|---|---|
+| campfire | −11,2 | −11,8 | −12,6 | −5,5 | **−2,8** | −7,9 | 35 |
+| fireplace | −13,7 | −13,9 | −14,0 | −6,8 | **−3,6** | −4,9 | 38 |
+| crackling | −22,3 | −21,3 | −18,5 | −5,4 | **−1,6** | −7,1 | 7 |
+| embers | −9,9 | −20,4 | −9,1 | **−2,4** | −7,3 | −8,6 | 40 |
+| *(mốc) gió `rain.py`* | | | | | | **+6,2** | 5 |
+
+Ở bản cũ, tỉ lệ chậm/nhanh của lửa đã âm. Vì vậy chỉ số này **không giải thích được hết** vì sao bản cũ nghe như gió.
+Nguyên nhân chính có lẽ là lớp ù-ào liên tục quá lớn so với tiếng nổ. Đây là suy luận từ số đo, cần tai người xác nhận.
+
+Kiểm tra 8 bản dài 3 phút: độ lớn từ −20,8 đến −18,7 LUFS, đỉnh thật ≤ −1,1 dBTP.
+Mẫu mới nằm trong `samples/fire_*.mp3`.
+
+**Cần nghe lại.** Lớp "rì rì" dày có thể bị nghe thành tiếng mưa lắc rắc hoặc tiếng nhiễu sóng radio.
+Nếu vậy thì giảm `fizz_level` hoặc `fizz_rate`.
