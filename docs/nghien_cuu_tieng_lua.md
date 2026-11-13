@@ -371,3 +371,72 @@ Quá trình chỉnh trong lần làm này, đều dựa vào số đo và hình:
 - Sonniss GDC 2026: https://rekkerd.org/sonniss-releases-gdc-2026-game-audio-bundle/
 - BBC Sound Effects: https://www.diyphotography.net/the-bbc-sound-effects-archive-is-now-free-to-download-with-over-33000-files/
 - Loại gỗ và tiếng lách tách: https://sfxengine.com/blog/fire-crackling-sound-effect
+
+---
+
+## 9. Đã làm: `fire.py`, tiếng lửa tổng hợp trộn thêm một chút bản thu thật
+
+Hướng đã chọn: **lớp chính là tiếng lửa tổng hợp, trộn thêm một chút bản thu thật bên dưới**.
+`fire.py` là file mới. Nó dùng lại `rain.py` và `rainmix.py` nhưng không sửa hai file này.
+
+### Chuẩn bị bản thu
+
+Chép bản thu lửa vào `library/lua/`. Tên thư mục tuỳ bạn, nên đặt không dấu.
+- Có thể dùng bản tự thu hoặc file CC0. Mỗi file nên dài vài phút trở lên và không có tiếng người hay xe.
+- Nhiều file thì các bản xuất ít trùng nhau hơn.
+- Không cần chỉnh âm lượng trước, `fire.py` tự cân.
+- Có thể chia thư mục theo loại: `lua_trai/`, `lo_suoi/`, `than_hong/`.
+
+### Dùng
+
+```bash
+python fire.py presets                                                      # campfire, fireplace, crackling, embers
+python fire.py render -p fireplace --real lua -d 10m -o lo_suoi.flac        # tổng hợp + bản thu (nhỏ hơn 6 dB)
+python fire.py render -p campfire -d 10m -o lua_trai.flac                   # chỉ tổng hợp
+python fire.py batch -p campfire,fireplace --real lua -n 20 -d 1h --outdir output -j 4
+python fire.py video videos/ -p fireplace --real lua --outdir output       # thay tiếng gốc của video
+```
+
+| Tuỳ chọn | Ý nghĩa |
+|---|---|
+| `--real THƯ_MỤC` | trộn bản thu trong `library/THƯ_MỤC`; bỏ trống thì chỉ có tiếng tổng hợp |
+| `--real-db` | độ lớn bản thu so với tiếng tổng hợp: `-6` (mặc định) là "một chút", `-12` là rất nhẹ, `0` là ngang nhau |
+| `-p`, `-s`, `-v`, `-d`, `--loudness`, `--fade`, `-j`, `--format`, `--overwrite` | giống `rain.py`; độ lớn mặc định là −20 LUFS |
+| `--library` | thư mục thư viện khác (mặc định `library`) |
+
+Mỗi seed tạo ra một bản khác nhau:
+- tiếng lửa tổng hợp mới hoàn toàn;
+- bản thu được chọn đoạn khác, nối bằng crossfade 3 giây;
+- tốc độ phát bản thu lệch khoảng ±3%;
+- tần số cắt trầm lệch khoảng ±15%;
+- độ lớn bản thu dâng hạ chậm khoảng ±2 dB.
+
+Như vậy dù chỉ có một bản thu, các video vẫn không trùng nhau. `manifest.csv` ghi seed, preset,
+thư mục bản thu, `real_db` và mọi thông số, nên tạo lại được đúng một bản.
+
+### Khác với bản thử nghiệm
+
+- Độ lớn được cân trên 60 giây đầu thay vì 30 giây, vì tiếng lửa lên xuống nhiều hơn tiếng mưa.
+- Có **limiter nhìn trước khoảng 1 ms**, giới hạn ở −3,3 dBFS:
+  - limiter chỉ giảm mượt vài tiếng nổ to nhất (dưới 0,07% số mẫu), không bẻ đỉnh;
+  - không bẻ đỉnh thì tiếng nổ không bị méo và đỉnh giữa các mẫu không vượt 0 dB, nên nén AAC trong video vẫn còn khoảng trống;
+  - đo trên 12 bản dài 3 phút: đỉnh thật từ −3,0 đến −0,5 dBTP; độ lớn −21,0 đến −18,8 LUFS.
+    Bản "embers" dao động nhiều nhất vì nó thưa.
+- Tiếng nổ được lọc trên 14 kHz dốc hơn.
+- Tốc độ: khoảng 1,5–2 phút CPU cho 1 giờ âm thanh, chưa tính phần đọc bản thu.
+
+### Kiểm thử
+
+`python -m unittest test_fire` chạy 7 test:
+- thông số theo seed;
+- độ dài và độ lớn của từng preset;
+- tái lập theo seed;
+- limiter ở ranh giới khối;
+- trộn bản thu, dùng một file nhiễu trầm làm "bản thu" giả;
+- lệnh `batch` có `--real`.
+
+Các test có sẵn của `rain.py` và `rainmix.py` vẫn qua hết.
+
+**Chưa kiểm chứng:** môi trường này không tải được bản thu lửa thật nào, vì Freesound bị chặn.
+Phần trộn chỉ mới thử với nhiễu giả lập, nên cần bạn thử với bản thu thật và nghe xem mức `--real-db` nào hợp.
+Mẫu nghe thử tiếng tổng hợp (không có bản thu): `samples/fire_*.mp3`.
